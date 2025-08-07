@@ -27,6 +27,19 @@ if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
 }
 Import-Module ActiveDirectory
 
+$user = Get-ADUser -Identity $UserIdentity -Properties userAccountControl -ErrorAction SilentlyContinue
+if (-not $user) {
+    Write-Host "User '$UserIdentity' not found. Creating new user..."
+    # Adjust these parameters as needed for your environment
+    New-ADUser -Name $UserIdentity `
+               -SamAccountName $UserIdentity `
+               -AccountPassword (ConvertTo-SecureString "P@ssw0rd123!" -AsPlainText -Force) `
+               -Enabled $true `
+			   -PasswordNeverExpires $true
+    # Optionally, re-fetch the user object
+    $user = Get-ADUser -Identity $UserIdentity -Properties userAccountControl
+}
+
 Set-ADAccountControl -Identity $UserIdentity -TrustedForDelegation $true
 
 # Usage:
