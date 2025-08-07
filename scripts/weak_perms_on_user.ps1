@@ -25,14 +25,31 @@ if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
 }
 Import-Module ActiveDirectory
 
+# Get target and low-priv user AD objects
 $Target = Get-ADUser -Identity $TargetUser
 $LowPriv = Get-ADUser -Identity $LowPrivUser
 
-$Identity = "$($LowPriv.DistinguishedName)"
-$ACL = Get-Acl "AD:\$($Target.DistinguishedName)"
-$Rule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($Identity, "GenericAll", "Allow")
+# Load the target object as a DirectoryEntry
+$TargetDN = "LDAP://" + $Target.DistinguishedName
+$TargetDE = [ADSI]$TargetDN
+
+# Translate the LowPriv user to a NTAccount SID
+$LowPrivSID = (New-Object System.Security.Principal.NTAccount($LowPriv.SamAccountName)).Translate([System.Security.Principal.SecurityIdentifier])
+
+# Get the existing ACL
+$ACL = $TargetDE.ObjectSecurity
+
+# Create new access rule with GenericAll
+$Rule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+    $LowPrivSID,
+    [System.DirectoryServices.ActiveDirectoryRights]::GenericAll,
+    [System.Security.AccessControl.AccessControlType]::Allow
+)
+
+# Add and apply the rule
 $ACL.AddAccessRule($Rule)
-Set-Acl -Path "AD:\$($Target.DistinguishedName)" -AclObject $ACL
+$TargetDE.ObjectSecurity = $ACL
+$TargetDE.CommitChanges()
 
 # Usage:
 # .\weak_perms_on_user.ps1 -TargetUser "domainadmin" -LowPrivUser "low.priv"
