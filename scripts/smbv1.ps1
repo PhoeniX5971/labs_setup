@@ -23,5 +23,5 @@ if ($feature.State -ne 'Enabled') {
         Write-Host "[*] SMB1Protocol enabled. No reboot required."
     }
 } else {
-    Write-Host "[✓] SMB1Protocol is already enabled."
+    Write-Host "[+] SMB1Protocol is already enabled."
 }
