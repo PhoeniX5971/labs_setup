@@ -15,12 +15,13 @@ if ($feature.State -ne 'Enabled') {
     Write-Host "[*] Enabling SMB1Protocol..." -ForegroundColor Cyan
     Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -All -NoRestart
 
-    if ($feature.RestartNeeded -or (Get-ComputerInfo | Select-Object -ExpandProperty WindowsProductName -like '*Server*')) {
+    # Check if a reboot is needed or it's a Server edition
+    if ($feature.RestartNeeded -or ((Get-ComputerInfo).WindowsProductName -like '*Server*')) {
         Write-Host "[!] Reboot is required. Restarting now..." -ForegroundColor Yellow
         Restart-Computer -Force
     } else {
         Write-Host "[*] SMB1Protocol enabled. No reboot required." -ForegroundColor Green
     }
 } else {
-    Write-Host "[+] SMB1Protocol is already enabled." -ForegroundColor Green
+    Write-Host "[✓] SMB1Protocol is already enabled." -ForegroundColor Green
 }
