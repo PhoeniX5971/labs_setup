@@ -1,6 +1,8 @@
 #############################################
 #  INSTALL ENTERPRISE ROOT CA & MODULES     #
 #############################################
+# Also known as: AD CS Base Setup            #
+#############################################
 # Requires:
 # - Windows Server (domain-joined)
 # - Domain Admin or Enterprise Admin rights
@@ -19,16 +21,35 @@
 #  Step 1: Install Enterprise Root CA       #
 #############################################
 
-# Install role (includes management tools)
-Install-WindowsFeature Adcs-Cert-Authority -IncludeManagementTools
+# Check if AD CS role is already installed
+if (Get-WindowsFeature Adcs-Cert-Authority | Where-Object {$_.InstallState -eq "Installed"}) {
+    Write-Host "[*] AD CS is already installed. Skipping installation." -ForegroundColor Green
+} else {
+    Write-Host "[*] Installing AD CS role..." -ForegroundColor Yellow
+    Install-WindowsFeature Adcs-Cert-Authority -IncludeManagementTools
+}
 
-# Configure a new Enterprise Root CA (interactive / supply params)
-Install-AdcsCertificationAuthority -CAType EnterpriseRootCA -Force
+# Check if CA is already configured
+$caService = Get-Service -Name CertSvc -ErrorAction SilentlyContinue
+if ($caService -and $caService.Status -ne $null) {
+    Write-Host "[*] Enterprise CA is already configured. Skipping configuration." -ForegroundColor Green
+} else {
+    Write-Host "[*] Configuring Enterprise Root CA..." -ForegroundColor Yellow
+    Install-AdcsCertificationAuthority -CAType EnterpriseRootCA -Force
+}
 
 #############################################
 #  Step 2: Install ADCSTemplate Module      #
 #############################################
 
-# On a machine that has AD PowerShell modules and is domain joined
-Install-Module -Name ADCSTemplate -Scope AllUsers -Force
+# Check if ADCSTemplate module is installed
+if (Get-Module -ListAvailable -Name ADCSTemplate) {
+    Write-Host "[*] ADCSTemplate module is already installed." -ForegroundColor Green
+} else {
+    Write-Host "[*] Installing ADCSTemplate module..." -ForegroundColor Yellow
+    Install-Module -Name ADCSTemplate -Scope AllUsers -Force
+}
+
+# Import the ADCSTemplate module
 Import-Module ADCSTemplate
+Write-Host "[+] ADCSTemplate module imported successfully." -ForegroundColor Green
