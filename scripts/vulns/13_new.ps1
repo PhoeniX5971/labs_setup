@@ -135,14 +135,17 @@ try {
 
     # Retrieve msPKI-Cert-Template-OID property from new object
     $newOIDValue = $newOIDObj.'msPKI-Cert-Template-OID'
+	Write-Host "1111111111111111111"
     if (-not $newOIDValue) {
         # Try to explicitly fetch if not returned by New-ADObject
         $newOIDValue = (Get-ADObject -Identity $newOIDObj.DistinguishedName -Properties 'msPKI-Cert-Template-OID').'msPKI-Cert-Template-OID'
     }
+	Write-Host "222222222222222222"
     if (-not $newOIDValue) {
         Write-Error "Could not retrieve msPKI-Cert-Template-OID from new OID object."
         exit 1
     }
+	Write-Host "33333333333333333"
 
     # Get certificate template object
     $certTemplate = Get-ADObject -Identity $ESC13Template -Properties 'msPKI-Certificate-Policy'
