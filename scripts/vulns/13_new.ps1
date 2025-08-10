@@ -138,6 +138,14 @@ try {
 	Write-Host "1111111111111111111"
     if (-not $newOIDValue) {
         # Try to explicitly fetch if not returned by New-ADObject
+	    # Check if an existing object with this name already exists
+		$existingOIDObj = Get-ADObject -Filter { Name -eq $OID.TemplateName } -SearchBase $TemplateOIDPath -ErrorAction SilentlyContinue
+
+		if ($existingOIDObj) {
+			Write-Host "Existing OID object found, removing it: $($existingOIDObj.DistinguishedName)"
+			Remove-ADObject -Identity $existingOIDObj.DistinguishedName -Confirm:$false
+		}	
+		
 		$newOIDObj = New-ADObject -Path $TemplateOIDPath -OtherAttributes $oa -Name $OID.TemplateName -Type msPKI-Enterprise-Oid -ErrorAction Stop
 
 		# Immediately fetch the full AD object
