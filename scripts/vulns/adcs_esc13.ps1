@@ -16,7 +16,6 @@ param(
     [string]$esc13templateName
 )
 
-# Import required modules
 Import-Module ADCSTemplate -ErrorAction SilentlyContinue
 Import-Module ActiveDirectory -ErrorAction Stop
 
@@ -73,8 +72,8 @@ $oa = @{
 New-ADObject -Path $TemplateOIDPath -OtherAttributes $oa -Name $OID.TemplateName -Type 'msPKI-Enterprise-Oid'
 
 # Step 4: Apply OID to the certificate template
-$OIDContainer = "CN=OID,CN=Public Key Services,CN=Services,"+$ConfigNC
-$newOIDObj = Get-ADObject -Filter * -SearchBase $OIDContainer -Properties DisplayName,msPKI-Cert-Template-OID | Where-Object {$_.DisplayName -eq $IssuanceName}
+$OIDContainer = "CN=OID,CN=Public Key Services,CN=Services," + $ConfigNC
+$newOIDObj = Get-ADObject -Filter * -SearchBase $OIDContainer -Properties DisplayName,msPKI-Cert-Template-OID | Where-Object { $_.DisplayName -eq $IssuanceName }
 $newOIDValue = $newOIDObj.'msPKI-Cert-Template-OID'
 
 $adObject = Get-ADObject $ESC13Template -Properties msPKI-Certificate-Policy
@@ -85,8 +84,14 @@ Set-ADObject -Identity $adObject.DistinguishedName -Replace @{ 'msPKI-Certificat
 $ludus_esc13_group_dn = (Get-ADGroup $esc13group).DistinguishedName
 $esc13OID_dn = $newOIDObj.DistinguishedName
 $object = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$esc13OID_dn")
-$object.Properties["msDS-OIDToGroupLink"].Value = $ludus_esc13_group_dn
-$object.CommitChanges()
-$object.RefreshCache()
 
-Write-Host "[+] ESC13 OID linked to group $esc13group successfully."
+try {
+    # Clear existing links, then add new one
+    $object.Properties["msDS-OIDToGroupLink"].Clear()
+    $object.Properties["msDS-OIDToGroupLink"].Add($ludus_esc13_group_dn)
+    $object.CommitChanges()
+    Write-Host "[+] ESC13 OID linked to group $esc13group successfully."
+}
+catch {
+    Write-Error "Failed to link OID to group: $_"
+}
