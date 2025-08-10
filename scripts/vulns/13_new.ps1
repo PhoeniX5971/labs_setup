@@ -75,6 +75,8 @@ try {
 
     $IssuanceName = "IssuancePolicyESC13"
     $ESC13Template = "CN=$esc13templateName,CN=Certificate Templates,CN=Public Key Services,CN=Services,$ConfigNC"
+	
+	Write-Host "Looking up certificate template with identity:`n$ESC13Template"
 
     # Generate unique OID for issuance policy
     $OID = New-TemplateOID -ConfigNC $ConfigNC
