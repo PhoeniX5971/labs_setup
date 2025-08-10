@@ -52,7 +52,10 @@ function New-TemplateOID {
         $OID_Part_1 = Get-Random -Minimum 10000000 -Maximum 99999999
         $OID_Part_2 = Get-Random -Minimum 10000000 -Maximum 99999999
         $OID_Part_3 = Get-RandomHex -Length 32
-		$OID_Forest = (Get-ADObject -Identity "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC" -Properties msPKI-Cert-Template-OID)['msPKI-Cert-Template-OID']
+
+        # Proper property access with quotes
+        $OID_Forest = (Get-ADObject -Identity "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC" -Properties msPKI-Cert-Template-OID)['msPKI-Cert-Template-OID']
+
         $msPKICertTemplateOID = "$OID_Forest.$OID_Part_1.$OID_Part_2"
         $Name = "$OID_Part_2.$OID_Part_3"
     } until (IsUniqueOID -cn $Name -TemplateOID $msPKICertTemplateOID -ConfigNC $ConfigNC)
@@ -76,10 +79,7 @@ try {
     # Generate unique OID for issuance policy
     $OID = New-TemplateOID -ConfigNC $ConfigNC
 
-    # OID container path
-    $TemplateOIDPath = "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC"
-
-    # Create new AD Object for the OID
+    # Prepare AD object attributes
     $oa = @{
         DisplayName             = $IssuanceName
         Name                    = $IssuanceName
@@ -87,27 +87,31 @@ try {
         'msPKI-Cert-Template-OID' = $OID.TemplateOID
     }
 
-    Write-Host "Creating new OID object with TemplateOID: $($OID.TemplateOID)" -ForegroundColor Yellow
-    $newOIDObj = New-ADObject -Path $TemplateOIDPath -OtherAttributes $oa -Name $OID.TemplateName -Type msPKI-Enterprise-Oid
+    Write-Host "Creating AD object with name: $($OID.TemplateName)"
+    Write-Host "Attributes:"
+    $oa.GetEnumerator() | ForEach-Object { Write-Host "  $_" }
 
-    # Retrieve the OID object to confirm
-    $OIDContainer = "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC"
-	# Use the created object directly
-	if (-not $newOIDObj) {
-		Write-Error "ERROR: New OID object creation failed"
-		exit 1
-	}
+    $TemplateOIDPath = "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC"
 
-	$newOIDValue = $newOIDObj.'msPKI-Cert-Template-OID'
+    # Create new AD Object for the OID with error handling
+    try {
+        $newOIDObj = New-ADObject -Path $TemplateOIDPath -OtherAttributes $oa -Name $OID.TemplateName -Type msPKI-Enterprise-Oid -ErrorAction Stop
+        Write-Host "Successfully created new OID AD object." -ForegroundColor Green
+    } catch {
+        Write-Error "Failed to create AD object for OID '$($OID.TemplateName)': $_"
+        exit 1
+    }
 
-	if (-not $newOIDValue) {
-		$newOIDValue = (Get-ADObject -Identity $newOIDObj.DistinguishedName -Properties 'msPKI-Cert-Template-OID').'msPKI-Cert-Template-OID'
-	}
-
-	if (-not $newOIDValue) {
-		Write-Error "ERROR: Could not retrieve msPKI-Cert-Template-OID from new OID object."
-		exit 1
-	}
+    # Retrieve msPKI-Cert-Template-OID property from new object
+    $newOIDValue = $newOIDObj.'msPKI-Cert-Template-OID'
+    if (-not $newOIDValue) {
+        # Try to explicitly fetch if not returned by New-ADObject
+        $newOIDValue = (Get-ADObject -Identity $newOIDObj.DistinguishedName -Properties 'msPKI-Cert-Template-OID').'msPKI-Cert-Template-OID'
+    }
+    if (-not $newOIDValue) {
+        Write-Error "Could not retrieve msPKI-Cert-Template-OID from new OID object."
+        exit 1
+    }
 
     # Get certificate template object
     $certTemplate = Get-ADObject -Identity $ESC13Template -Properties 'msPKI-Certificate-Policy'
@@ -115,9 +119,7 @@ try {
     # Update certificate template policy with new OID
     $policies = $certTemplate.'msPKI-Certificate-Policy'
 
-    # Replace or add new policy OID
     if ($policies) {
-        # If policies exist, add new one only if not present
         if ($policies -notcontains $newOIDValue) {
             $policies += $newOIDValue
         }
@@ -125,7 +127,6 @@ try {
         $policies = @($newOIDValue)
     }
 
-    # Write changes
     Write-Host "Updating certificate template '$esc13templateName' with new issuance policy OID..." -ForegroundColor Yellow
     Set-ADObject -Identity $certTemplate.DistinguishedName -Replace @{ 'msPKI-Certificate-Policy' = $policies }
 
@@ -140,7 +141,8 @@ try {
     $object.RefreshCache()
 
     Write-Host "ESC13 vulnerability setup complete!" -ForegroundColor Green
-} catch {
-    Write-Error "An error occurred: $_"
+}
+catch {
+    Write-Error "An unexpected error occurred: $_"
     exit 1
 }
