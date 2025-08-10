@@ -108,8 +108,9 @@ try {
     $OIDContainer = "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC"
     Debug-Write "OID Container: $OIDContainer"
 
-    # Try to get new OID object by Name (use TemplateName because DisplayName may differ)
-    $newOIDObj = Get-ADObject -SearchBase $OIDContainer -Filter {Name -eq $OID.TemplateName} -Properties DisplayName, msPKI-Cert-Template-OID
+    # Get the new OID object by Name using $OID.TemplateName (from hashtable)
+    $newOIDObj = Get-ADObject -SearchBase $OIDContainer -Filter "Name -eq '$($OID.TemplateName)'" -Properties DisplayName, msPKI-Cert-Template-OID
+
     if (-not $newOIDObj) {
         Write-Error "Failed to find new OID object by Name '$($OID.TemplateName)'."
         exit 1
