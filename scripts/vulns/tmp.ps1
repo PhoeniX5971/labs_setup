@@ -1,16 +1,11 @@
-$esc13OID_dn = $newOIDObj.DistinguishedName
-$ludus_esc13_group_dn = (Get-ADGroup $esc13group).DistinguishedName
+$ConfigNC = (Get-ADRootDSE).configurationNamingContext
+$TemplateOIDPath = "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC"
 
-$object = [ADSI]"LDAP://$esc13OID_dn"
-
-# ADSI constant 3 = ADS_PROPERTY_APPEND
-$ADS_PROPERTY_APPEND = 3
-
-try {
-    $object.PutEx($ADS_PROPERTY_APPEND, "msDS-OIDToGroupLink", $ludus_esc13_group_dn)
-    $object.SetInfo()
-    Write-Host "[+] Successfully linked group to OID."
+$oa = @{
+    DisplayName = "TestIssuancePolicyESC13"
+    Name = "TestIssuancePolicyESC13"
+    flags = [int]2
+    'msPKI-Cert-Template-OID' = "1.2.3.4.5.6.7.8"
 }
-catch {
-    Write-Error "Failed to link group to OID: $_"
-}
+
+New-ADObject -Path $TemplateOIDPath -OtherAttributes $oa -Name "TestOID123456789" -Type msPKI-Enterprise-Oid
