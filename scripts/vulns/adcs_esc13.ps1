@@ -73,7 +73,7 @@ New-ADObject -Path $TemplateOIDPath -OtherAttributes $oa -Name $OID.TemplateName
 
 # Step 4: Apply OID to the certificate template
 $OIDContainer = "CN=OID,CN=Public Key Services,CN=Services," + $ConfigNC
-$newOIDObj = Get-ADObject -Filter * -SearchBase $OIDContainer -Properties DisplayName,msPKI-Cert-Template-OID | Where-Object { $_.DisplayName -eq $IssuanceName }
+$newOIDObj = Get-ADObject -SearchBase $OIDContainer -Filter {Name -eq $OID.TemplateName} -Properties DisplayName, msPKI-Cert-Template-OID
 $newOIDValue = $newOIDObj.'msPKI-Cert-Template-OID'
 
 $adObject = Get-ADObject $ESC13Template -Properties msPKI-Certificate-Policy
