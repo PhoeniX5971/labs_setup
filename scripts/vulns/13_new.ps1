@@ -76,15 +76,22 @@ try {
     $ADRootDSE = Get-ADRootDSE
     $ConfigNC = $ADRootDSE.configurationNamingContext
 
+    Write-Host "esc13templateName = '$esc13templateName'"
+    Write-Host "ConfigNC = '$ConfigNC'"
 
-    $IssuanceName = "IssuancePolicyESC13"
+    # Build the DN of the certificate template
     $ESC13Template = "CN=$esc13templateName,CN=Certificate Templates,CN=Public Key Services,CN=Services,$ConfigNC"
-
-	Write-Host "Looking up certificate template with identity:`n$ESC13Template"
-	
+    Write-Host "Looking up certificate template with identity:`n$ESC13Template"
 
     # Generate unique OID for issuance policy
     $OID = New-TemplateOID -ConfigNC $ConfigNC
+
+    # Check if certificate template exists before proceeding
+    $certTemplate = Get-ADObject -Identity $ESC13Template -Properties 'msPKI-Certificate-Policy' -ErrorAction SilentlyContinue
+    if (-not $certTemplate) {
+        Write-Error "Certificate template '$esc13templateName' not found at path:`n$ESC13Template"
+        exit 1
+    }
 
     # Prepare AD object attributes
     $oa = @{
