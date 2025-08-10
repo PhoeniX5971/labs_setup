@@ -15,12 +15,12 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$esc13templateName,
 
-    [switch]$debug
+    [switch]$dbg
 )
 
 function Debug-Write {
     param([string]$msg)
-    if ($Debug) { Write-Host "[DEBUG] $msg" }
+    if ($dbg) { Write-Host "[DEBUG] $msg" }
 }
 
 try {
