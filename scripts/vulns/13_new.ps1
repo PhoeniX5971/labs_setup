@@ -111,6 +111,10 @@ try {
 		'msPKI-Cert-Template-OID' = $OID.TemplateOID
 	}
 
+		$oa.GetEnumerator() | ForEach-Object {
+			Write-Host "$($_.Key) = $($_.Value)"
+		}
+
 	Write-Host "DEBUG: VariableName = '$oa" -ForegroundColor Yellow
 	if ([string]::IsNullOrEmpty($oa)) { throw "VariableName is NULL before -Identity call" }
 
