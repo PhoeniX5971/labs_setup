@@ -52,7 +52,7 @@ function New-TemplateOID {
         $OID_Part_1 = Get-Random -Minimum 10000000 -Maximum 99999999
         $OID_Part_2 = Get-Random -Minimum 10000000 -Maximum 99999999
         $OID_Part_3 = Get-RandomHex -Length 32
-        $OID_Forest = (Get-ADObject -Identity "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC" -Properties msPKI-Cert-Template-OID).[`msPKI-Cert-Template-OID`]
+		$OID_Forest = (Get-ADObject -Identity "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC" -Properties msPKI-Cert-Template-OID)['msPKI-Cert-Template-OID']
         $msPKICertTemplateOID = "$OID_Forest.$OID_Part_1.$OID_Part_2"
         $Name = "$OID_Part_2.$OID_Part_3"
     } until (IsUniqueOID -cn $Name -TemplateOID $msPKICertTemplateOID -ConfigNC $ConfigNC)
