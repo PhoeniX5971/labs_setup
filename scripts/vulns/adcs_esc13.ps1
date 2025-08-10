@@ -7,32 +7,44 @@
 # - PowerShell running as domain admin
 #
 # This simulates ESC13 by creating a new issuance policy OID and linking it to a group.
+#
+# Parameters:
+# -esc13group        : AD group to link OID to (e.g., vuln_group)
+# -esc13templateName : Certificate template name to apply the new OID to (e.g., WebServer)
+#
 
 param(
     [Parameter(Mandatory = $true)]
     [string]$esc13group,
 
     [Parameter(Mandatory = $true)]
-    [string]$esc13templateName,
-
-    [switch]$dbg
+    [string]$esc13templateName
 )
 
 function Debug-Write {
-    param([string]$msg)
-    if ($dbg) { Write-Host "[DEBUG] $msg" }
+    param([string]$message)
+    Write-Host "[DEBUG] $message"
 }
 
+# Import modules with error handling
 try {
     Import-Module ADCSTemplate -ErrorAction SilentlyContinue
-    Import-Module ActiveDirectory -ErrorAction Stop
-    Debug-Write "Modules imported successfully."
+    Debug-Write "ADCSTemplate module imported successfully."
 } catch {
-    Write-Error "Failed to import required modules: $_"
+    Write-Error "Failed to import ADCSTemplate module: $_"
     exit 1
 }
 
-Function Get-RandomHex {
+try {
+    Import-Module ActiveDirectory -ErrorAction Stop
+    Debug-Write "ActiveDirectory module imported successfully."
+} catch {
+    Write-Error "Failed to import ActiveDirectory module: $_"
+    exit 1
+}
+
+# Function to generate a random hex string
+function Get-RandomHex {
     param ([int]$Length)
     $Hex = '0123456789ABCDEF'
     $Return = ''
@@ -42,22 +54,23 @@ Function Get-RandomHex {
     return $Return
 }
 
-Function IsUniqueOID {
+# Check if OID is unique in AD
+function IsUniqueOID {
     param ($cn, $TemplateOID, $ConfigNC)
     $Search = Get-ADObject -Filter {cn -eq $cn -and msPKI-Cert-Template-OID -eq $TemplateOID} -SearchBase "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC"
-    if ($Search) { return $false } else { return $true }
+    return -not $Search
 }
 
-Function New-TemplateOID {
+# Generate a new unique OID
+function New-TemplateOID {
     param($ConfigNC)
     do {
         $OID_Part_1 = Get-Random -Minimum 10000000 -Maximum 99999999
         $OID_Part_2 = Get-Random -Minimum 10000000 -Maximum 99999999
         $OID_Part_3 = Get-RandomHex -Length 32
-        $OID_Forest = Get-ADObject -Identity "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC" -Properties msPKI-Cert-Template-OID | Select-Object -ExpandProperty msPKI-Cert-Template-OID
+        $OID_Forest = (Get-ADObject -Identity "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC" -Properties msPKI-Cert-Template-OID).'msPKI-Cert-Template-OID'
         $msPKICertTemplateOID = "$OID_Forest.$OID_Part_1.$OID_Part_2"
         $Name = "$OID_Part_2.$OID_Part_3"
-        Debug-Write "Generated OID: $msPKICertTemplateOID with Name: $Name"
     } until (IsUniqueOID -cn $Name -TemplateOID $msPKICertTemplateOID -ConfigNC $ConfigNC)
     return @{
         TemplateOID  = $msPKICertTemplateOID
@@ -65,52 +78,38 @@ Function New-TemplateOID {
     }
 }
 
+# Main
 try {
-    # Step 1: Get configuration context
     $ADRootDSE = Get-ADRootDSE
     $ConfigNC = $ADRootDSE.configurationNamingContext
     Debug-Write "ConfigNC: $ConfigNC"
 
-    if (-not $ConfigNC) {
-        Write-Error "Failed to retrieve configurationNamingContext. Are you running this on a domain-joined machine?"
-        exit 1
-    }
-
-    # Step 2: Build OID structure
-    $IssuanceName = "IssuancePolicyESC13"
+    # Build LDAP paths
     $ESC13Template = "CN=$esc13templateName,CN=Certificate Templates,CN=Public Key Services,CN=Services,$ConfigNC"
     Debug-Write "Using template LDAP path: $ESC13Template"
 
+    # Create a new unique OID
     $OID = New-TemplateOID -ConfigNC $ConfigNC
+    Debug-Write "Generated OID: $($OID.TemplateOID) with Name: $($OID.TemplateName)"
 
     $TemplateOIDPath = "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC"
     Debug-Write "Template OID Path: $TemplateOIDPath"
 
-    # Step 3: Create new OID object
+    # Create the new OID AD object
     $oa = @{
-        'DisplayName' = $IssuanceName
-        'Name' = $IssuanceName
-        'flags' = [System.Int32]'2'
+        'DisplayName' = "IssuancePolicyESC13"
+        'Name' = "IssuancePolicyESC13"
+        'flags' = [int]2
         'msPKI-Cert-Template-OID' = $OID.TemplateOID
     }
-
-    Debug-Write "Creating new OID object with properties: $($oa | Out-String)"
     New-ADObject -Path $TemplateOIDPath -OtherAttributes $oa -Name $OID.TemplateName -Type 'msPKI-Enterprise-Oid'
-    Write-Host "[+] Created new OID object: $($OID.TemplateName)"
+    Debug-Write "Created new OID object: $($OID.TemplateName)"
 
-} catch {
-    Write-Error "Error creating new OID object: $_"
-    exit 1
-}
-
-try {
     # Step 4: Apply OID to the certificate template
     $OIDContainer = "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC"
     Debug-Write "OID Container: $OIDContainer"
 
-    # Get the new OID object by Name using $OID.TemplateName (from hashtable)
     $newOIDObj = Get-ADObject -SearchBase $OIDContainer -Filter "Name -eq '$($OID.TemplateName)'" -Properties DisplayName, msPKI-Cert-Template-OID
-
     if (-not $newOIDObj) {
         Write-Error "Failed to find new OID object by Name '$($OID.TemplateName)'."
         exit 1
@@ -126,17 +125,11 @@ try {
         exit 1
     }
     Debug-Write "Certificate template DN: $($adObject.DistinguishedName)"
-    
+
     $policies = @($newOIDValue)
     Set-ADObject -Identity $adObject.DistinguishedName -Replace @{ 'msPKI-Certificate-Policy' = $policies }
     Write-Host "[+] Applied OID to certificate template '$esc13templateName'"
 
-} catch {
-    Write-Error "Error applying OID to certificate template: $_"
-    exit 1
-}
-
-try {
     # Step 5: Link the OID to the group
     $ludus_esc13_group_dn = (Get-ADGroup -Identity $esc13group).DistinguishedName
     if (-not $ludus_esc13_group_dn) {
@@ -148,13 +141,13 @@ try {
     $esc13OID_dn = $newOIDObj.DistinguishedName
     $object = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$esc13OID_dn")
 
-    # Get current values
+    # Get current values of msDS-OIDToGroupLink
     $currentLinks = @()
     if ($object.Properties["msDS-OIDToGroupLink"].Count -gt 0) {
         $currentLinks = $object.Properties["msDS-OIDToGroupLink"] | ForEach-Object { $_ }
     }
 
-    # Check if group DN is already linked
+    # Add group DN if not present
     if ($currentLinks -contains $ludus_esc13_group_dn) {
         Write-Host "Group is already linked to OID. Skipping addition."
     }
@@ -165,12 +158,7 @@ try {
         Write-Host "[+] ESC13 OID linked to group '$esc13group' successfully."
     }
 }
-
 catch {
-    Write-Error "Failed to link OID to group: $_"
-    exit 1
-}
-catch {
-    Write-Error "Failed to link OID to group: $_"
+    Write-Error "An error occurred: $_"
     exit 1
 }
