@@ -59,11 +59,10 @@ function New-TemplateOID {
         $Name = "$OID_Part_2.$OID_Part_3"
     } until (IsUniqueOID -cn $Name -TemplateOID $msPKICertTemplateOID -ConfigNC $ConfigNC)
     
-    Write-Host "[DEBUG] Generated OID: $msPKICertTemplateOID with name: $Name"
-    
+    # Return hashtable with consistent key names
     return @{
-        TemplateOID  = $msPKICertTemplateOID
-        TemplateName = $Name
+        'TemplateOID'  = $msPKICertTemplateOID
+        'TemplateName' = $Name
     }
 }
 
@@ -82,10 +81,11 @@ try {
     Write-Host "Looking up certificate template at: $ESC13Template"
 
     # Generate unique OID for issuance policy
-    $OID = New-TemplateOID -ConfigNC $ConfigNC
+	$OID = New-TemplateOID -ConfigNC $ConfigNC
     Write-Host "Generated OID details:"
-    Write-Host "  TemplateOID: $($OID.TemplateOID)"
-    Write-Host "  TemplateName: $($OID.TemplateName)"
+	# Access the properties with the exact same case:
+	Write-Host "Template OID: $($OID['TemplateOID'])"
+	Write-Host "Template Name: $($OID['TemplateName'])"
 
     # Check if certificate template exists before proceeding
     $certTemplate = Get-ADObject -Identity $ESC13Template -Properties 'msPKI-Certificate-Policy' -ErrorAction SilentlyContinue
