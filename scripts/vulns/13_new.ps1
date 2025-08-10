@@ -92,9 +92,22 @@ try {
 
     # Retrieve the OID object to confirm
     $OIDContainer = "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC"
-    $OIDs = Get-ADObject -Filter * -SearchBase $OIDContainer -Properties DisplayName,Name,msPKI-Cert-Template-OID,msDS-OIDToGroupLink
-    $newOIDObj = $OIDs | Where-Object { $_.DisplayName -eq $IssuanceName }
-    $newOIDValue = $newOIDObj.'msPKI-Cert-Template-OID'
+	# Use the created object directly
+	if (-not $newOIDObj) {
+		Write-Error "ERROR: New OID object creation failed"
+		exit 1
+	}
+
+	$newOIDValue = $newOIDObj.'msPKI-Cert-Template-OID'
+
+	if (-not $newOIDValue) {
+		$newOIDValue = (Get-ADObject -Identity $newOIDObj.DistinguishedName -Properties 'msPKI-Cert-Template-OID').'msPKI-Cert-Template-OID'
+	}
+
+	if (-not $newOIDValue) {
+		Write-Error "ERROR: Could not retrieve msPKI-Cert-Template-OID from new OID object."
+		exit 1
+	}
 
     # Get certificate template object
     $certTemplate = Get-ADObject -Identity $ESC13Template -Properties 'msPKI-Certificate-Policy'
