@@ -130,33 +130,28 @@ try {
     Set-ADObject -Identity $adObject.DistinguishedName -Replace @{ 'msPKI-Certificate-Policy' = $policies }
     Write-Host "[+] Applied OID to certificate template '$esc13templateName'"
 
-    # Step 5: Link the OID to the group
-    $ludus_esc13_group_dn = (Get-ADGroup -Identity $esc13group).DistinguishedName
-    if (-not $ludus_esc13_group_dn) {
-        Write-Error "Group '$esc13group' not found."
-        exit 1
-    }
-    Debug-Write "Group DN: $ludus_esc13_group_dn"
+# Step 5: Link the OID to the group (fixed for multi-valued attribute)
+	$ludus_esc13_group_dn = (Get-ADGroup -Identity $esc13group).DistinguishedName
+	if (-not $ludus_esc13_group_dn) {
+		Write-Error "Group '$esc13group' not found."
+		exit 1
+	}
+	Debug-Write "Group DN: $ludus_esc13_group_dn"
 
-    $esc13OID_dn = $newOIDObj.DistinguishedName
-    $object = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$esc13OID_dn")
+	$esc13OID_dn = $newOIDObj.DistinguishedName
+	$object = [ADSI]"LDAP://$esc13OID_dn"
 
-    # Get current values of msDS-OIDToGroupLink
-    $currentLinks = @()
-    if ($object.Properties["msDS-OIDToGroupLink"].Count -gt 0) {
-        $currentLinks = $object.Properties["msDS-OIDToGroupLink"] | ForEach-Object { $_ }
-    }
+	$ADS_PROPERTY_APPEND = 3
 
-    # Add group DN if not present
-    if ($currentLinks -contains $ludus_esc13_group_dn) {
-        Write-Host "Group is already linked to OID. Skipping addition."
-    }
-    else {
-        Write-Host "Adding group link to OID."
-        $object.Properties["msDS-OIDToGroupLink"].Add($ludus_esc13_group_dn) | Out-Null
-        $object.CommitChanges()
-        Write-Host "[+] ESC13 OID linked to group '$esc13group' successfully."
-    }
+	try {
+		# Append the group DN to msDS-OIDToGroupLink attribute
+		$object.PutEx($ADS_PROPERTY_APPEND, "msDS-OIDToGroupLink", $ludus_esc13_group_dn)
+		$object.SetInfo()
+		Write-Host "[+] ESC13 OID linked to group '$esc13group' successfully."
+	}
+	catch {
+		Write-Error "Failed to link group to OID: $_"
+	}
 }
 catch {
     Write-Error "An error occurred: $_"
