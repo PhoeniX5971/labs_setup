@@ -138,7 +138,10 @@ try {
 	Write-Host "1111111111111111111"
     if (-not $newOIDValue) {
         # Try to explicitly fetch if not returned by New-ADObject
-        $newOIDValue = (Get-ADObject -Identity $newOIDObj.DistinguishedName -Properties 'msPKI-Cert-Template-OID').'msPKI-Cert-Template-OID'
+		$newOIDObj = New-ADObject -Path $TemplateOIDPath -OtherAttributes $oa -Name $OID.TemplateName -Type msPKI-Enterprise-Oid -ErrorAction Stop
+
+		# Immediately fetch the full AD object
+		$newOIDObj = Get-ADObject -Filter { Name -eq $OID.TemplateName } -SearchBase $TemplateOIDPath -Properties 'msPKI-Cert-Template-OID'
     }
 	Write-Host "222222222222222222"
     if (-not $newOIDValue) {
