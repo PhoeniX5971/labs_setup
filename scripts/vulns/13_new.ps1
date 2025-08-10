@@ -94,6 +94,13 @@ try {
     }
 
     # Prepare AD object attributes
+	#
+	Write-Host "OID.TemplateOID value: '$($OID.TemplateOID)'"
+	if ([string]::IsNullOrEmpty($OID.TemplateOID)) {
+		Write-Error "OID.TemplateOID is null or empty! Cannot create AD object."
+		exit 1
+	}
+	#
     $oa = @{
         DisplayName             = $IssuanceName
         Name                    = $IssuanceName
