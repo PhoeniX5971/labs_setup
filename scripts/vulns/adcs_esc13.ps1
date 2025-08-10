@@ -148,12 +148,29 @@ try {
     $esc13OID_dn = $newOIDObj.DistinguishedName
     $object = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$esc13OID_dn")
 
-    # Clear existing and add new group link
-    $object.Properties["msDS-OIDToGroupLink"].Clear()
-    $object.Properties["msDS-OIDToGroupLink"].Add($ludus_esc13_group_dn)
-    $object.CommitChanges()
-    Write-Host "[+] ESC13 OID linked to group '$esc13group' successfully."
-} catch {
+    # Get current values
+    $currentLinks = @()
+    if ($object.Properties["msDS-OIDToGroupLink"].Count -gt 0) {
+        $currentLinks = $object.Properties["msDS-OIDToGroupLink"] | ForEach-Object { $_ }
+    }
+
+    # Check if group DN is already linked
+    if ($currentLinks -contains $ludus_esc13_group_dn) {
+        Write-Host "Group is already linked to OID. Skipping addition."
+    }
+    else {
+        Write-Host "Adding group link to OID."
+        $object.Properties["msDS-OIDToGroupLink"].Add($ludus_esc13_group_dn) | Out-Null
+        $object.CommitChanges()
+        Write-Host "[+] ESC13 OID linked to group '$esc13group' successfully."
+    }
+}
+
+catch {
+    Write-Error "Failed to link OID to group: $_"
+    exit 1
+}
+catch {
     Write-Error "Failed to link OID to group: $_"
     exit 1
 }
