@@ -101,12 +101,12 @@ try {
 		exit 1
 	}
 	#
-    $oa = @{
-        DisplayName             = $IssuanceName
-        Name                    = $IssuanceName
-        flags                   = [int]2
-        'msPKI-Cert-Template-OID' = $OID.TemplateOID
-    }
+	$oa = @{
+		DisplayName             = "IssuancePolicyESC13"
+		Name                    = "IssuancePolicyESC13"
+		flags                   = [int]2
+		'msPKI-Cert-Template-OID' = $OID.TemplateOID
+	}
 
     Write-Host "Creating AD object with name: $($OID.TemplateName)"
     Write-Host "Attributes:"
