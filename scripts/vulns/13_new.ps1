@@ -86,6 +86,9 @@ try {
     # Generate unique OID for issuance policy
     $OID = New-TemplateOID -ConfigNC $ConfigNC
 
+
+	Write-Host "DEBUG: VariableName = '$ESC13Template" -ForegroundColor Yellow
+	if ([string]::IsNullOrEmpty($ESC13Template)) { throw "VariableName is NULL before -Identity call" }
     # Check if certificate template exists before proceeding
     $certTemplate = Get-ADObject -Identity $ESC13Template -Properties 'msPKI-Certificate-Policy' -ErrorAction SilentlyContinue
     if (-not $certTemplate) {
@@ -107,6 +110,9 @@ try {
 		flags                   = [int]2
 		'msPKI-Cert-Template-OID' = $OID.TemplateOID
 	}
+
+	Write-Host "DEBUG: VariableName = '$oa" -ForegroundColor Yellow
+	if ([string]::IsNullOrEmpty($oa)) { throw "VariableName is NULL before -Identity call" }
 
     Write-Host "Creating AD object with name: $($OID.TemplateName)"
     Write-Host "Attributes:"
