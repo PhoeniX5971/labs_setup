@@ -1,11 +1,16 @@
-$newOIDObj = Get-ADObject -Filter * -SearchBase $OIDContainer -Properties DisplayName,msPKI-Cert-Template-OID | Where-Object { $_.DisplayName -eq $IssuanceName }
-if (-not $newOIDObj) {
-    Write-Error "Failed to find the new OID object with DisplayName '$IssuanceName'."
-    exit
-}
-
+$esc13OID_dn = $newOIDObj.DistinguishedName
 $ludus_esc13_group_dn = (Get-ADGroup $esc13group).DistinguishedName
-if (-not $ludus_esc13_group_dn) {
-    Write-Error "Failed to find the group '$esc13group'."
-    exit
+
+$object = [ADSI]"LDAP://$esc13OID_dn"
+
+# ADSI constant 3 = ADS_PROPERTY_APPEND
+$ADS_PROPERTY_APPEND = 3
+
+try {
+    $object.PutEx($ADS_PROPERTY_APPEND, "msDS-OIDToGroupLink", $ludus_esc13_group_dn)
+    $object.SetInfo()
+    Write-Host "[+] Successfully linked group to OID."
+}
+catch {
+    Write-Error "Failed to link group to OID: $_"
 }
