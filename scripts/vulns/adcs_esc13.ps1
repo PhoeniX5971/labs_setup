@@ -15,7 +15,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$esc13templateName,
 
-    [switch]$Debug
+    [switch]$debug
 )
 
 function Debug-Write {
