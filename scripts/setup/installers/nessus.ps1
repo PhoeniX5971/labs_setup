@@ -4,6 +4,19 @@ function Success($msg){ Write-Host "[+] $msg" -ForegroundColor Green }
 function ErrorMsg($msg){ Write-Host "[-] $msg" -ForegroundColor Red }
 function Warn($msg)   { Write-Host "[!] $msg" -ForegroundColor Magenta }
 
+# Minimum free space in GB required
+$requiredGB = 0.5
+
+# Get free space on C: (in GB)
+$freeGB = [math]::Round((Get-PSDrive C).Free / 1GB, 2)
+
+if ($freeGB -lt $requiredGB) {
+    Write-Host "[-] Not enough disk space. Required: ${requiredGB}GB, Available: ${freeGB}GB" -ForegroundColor Red
+    exit 1
+} else {
+    Write-Host "[+] Disk space check passed. Available: ${freeGB}GB" -ForegroundColor Green
+}
+
 # Step 1: Get HTML and extract latest MSI info
 Info "Fetching Nessus download page..."
 try {
