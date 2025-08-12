@@ -41,6 +41,9 @@ Info "Installing Nessus silently..."
 $process = Start-Process "msiexec.exe" -ArgumentList "/i `"$msiPath`" /qn /norestart" -Wait -PassThru
 if ($process.ExitCode -eq 0) {
     Success "Nessus installation completed."
+    Info "Cleaning up installer file..."
+    Remove-Item $msiPath -Force
+    Success "Installer removed."
 } else {
     ErrorMsg "Nessus installation failed with exit code $($process.ExitCode)."
     exit 1
