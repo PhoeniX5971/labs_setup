@@ -1,11 +1,60 @@
-Write-Host "[*] Downloading nessus." -ForegroundColor Yellow
+# Colors for output
+function Info($msg)   { Write-Host "[*] $msg" -ForegroundColor Yellow }
+function Success($msg){ Write-Host "[+] $msg" -ForegroundColor Green }
+function ErrorMsg($msg){ Write-Host "[-] $msg" -ForegroundColor Red }
+function Warn($msg)   { Write-Host "[!] $msg" -ForegroundColor Magenta }
 
-iwr "https://www.tenable.com/downloads/api/v2/pages/nessus/files/Nessus-10.9.2-x64.msi" -OutFile "Nessus-10.9.2-x64.msi"
+# Step 1: Get HTML and extract latest MSI info
+Info "Fetching Nessus download page..."
+try {
+    $html = Invoke-WebRequest -Uri "https://www.tenable.com/downloads/nessus?loginAttempted=true" -UseBasicParsing
+    $content = $html.Content
+} catch {
+    ErrorMsg "Failed to fetch Nessus download page."
+    exit 1
+}
 
-Write-Host "[+] Nessus successfully downloaded." -ForegroundColor Green
+if ($content -match 'Nessus-(\d+\.\d+\.\d+)-x64\.msi') {
+    $version = $matches[1]
+    $fileName = $matches[0]
+    $downloadUrl = "https://www.tenable.com/downloads/api/v2/pages/nessus/files/$fileName"
+    Success "Found latest Nessus version: $version"
+    Info "Download URL: $downloadUrl"
+} else {
+    ErrorMsg "Could not find MSI in HTML."
+    exit 1
+}
 
-Write-Host "[*] Installing on disk." -ForegroundColor Yellow
+# Step 2: Download MSI
+$msiPath = "$PSScriptRoot\$fileName"
+Info "Downloading Nessus installer..."
+try {
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $msiPath
+    Success "Nessus downloaded to $msiPath"
+} catch {
+    ErrorMsg "Failed to download Nessus MSI."
+    exit 1
+}
 
-msiexec.exe /i "Nessus-10.9.2-x64.msi" /qn /norestart
+# Step 3: Install silently
+Info "Installing Nessus silently..."
+$process = Start-Process "msiexec.exe" -ArgumentList "/i `"$msiPath`" /qn /norestart" -Wait -PassThru
+if ($process.ExitCode -eq 0) {
+    Success "Nessus installation completed."
+} else {
+    ErrorMsg "Nessus installation failed with exit code $($process.ExitCode)."
+    exit 1
+}
 
-Write-Host "[+] Finished Installation." -ForegroundColor Green
+# Step 4: Start Nessus service
+Info "Starting Nessus service..."
+try {
+    Start-Service "Tenable Nessus"
+    Success "Nessus service started."
+} catch {
+    Warn "Could not start Nessus service. It may already be running."
+}
+
+# Step 5: Open Nessus in browser
+Info "Opening Nessus web interface..."
+Start-Process "https://localhost:8834/"
