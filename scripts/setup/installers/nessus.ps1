@@ -15,7 +15,7 @@ function Warn($msg)
 # Check Size Before Install
 try
 {
-	. ./Check-DiskSpace.ps1 -RequiredGB 0.5 -Drive "C"
+	. ./size_check.ps1 -RequiredGB 0.5 -Drive "C"
 } catch
 {
 	Write-Host "[-] Installation aborted due to disk space check failure." -ForegroundColor Red
