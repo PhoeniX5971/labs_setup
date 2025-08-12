@@ -12,19 +12,14 @@ function Warn($msg)
 { Write-Host "[!] $msg" -ForegroundColor Magenta 
 }
 
-# Minimum free space in GB required
-$requiredGB = 0.5
-
-# Get free space on C: (in GB)
-$freeGB = [math]::Round((Get-PSDrive C).Free / 1GB, 2)
-
-if ($freeGB -lt $requiredGB)
+# Check Size Before Install
+try
 {
-	Write-Host "[-] Not enough disk space. Required: ${requiredGB}GB, Available: ${freeGB}GB" -ForegroundColor Red
+	. ./Check-DiskSpace.ps1 -RequiredGB 0.5 -Drive "C"
+} catch
+{
+	Write-Host "[-] Installation aborted due to disk space check failure." -ForegroundColor Red
 	exit 1
-} else
-{
-	Write-Host "[+] Disk space check passed. Available: ${freeGB}GB" -ForegroundColor Green
 }
 
 # Step 1: Get HTML and extract latest MSI info
