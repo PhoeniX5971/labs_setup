@@ -18,7 +18,7 @@ try
 	. ./size_check.ps1 -RequiredGB 0.5 -Drive "C"
 } catch
 {
-	Write-Host "[-] Installation aborted due to disk space check failure." -ForegroundColor Red
+	ErrorMsg "Installation aborted due to disk space check failure."
 	exit 1
 }
 
