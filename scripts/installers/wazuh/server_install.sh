@@ -32,7 +32,7 @@ fi
 # Download and run Wazuh installer
 echo "Downloading and running Wazuh installer..."
 curl -sO https://packages.wazuh.com/4.12/wazuh-install.sh
-bash ./wazuh-install.sh -a
+bash ./wazuh-install.sh -a --overwrite
 
 tar -xf wazuh-install-files.tar --strip-components=1 -C . wazuh-install-files/wazuh-passwords.txt
 echo "A copy of the passwords file have been moved to current location 'wazuh-passwords.txt'."
