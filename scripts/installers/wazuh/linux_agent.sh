@@ -45,34 +45,41 @@ else
 	echo "[-] curl is already installed."
 fi
 
-# Download and run Wazuh installer
-echo "[*] Installing PGP keys..."
-curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import && chmod 644 /usr/share/keyrings/wazuh.gpg
-echo "[+] PGP keys installed."
-
-# Add the repository
-echo "[*] Adding Wazuh repository..."
+# Install PGP keys and repo
+echo "[*] Installing PGP keys and adding repo..."
+curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import
+chmod 644 /usr/share/keyrings/wazuh.gpg
 echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | tee /etc/apt/sources.list.d/wazuh.list
-echo "[+] Repository added."
-
-# Update system packages
-echo "[*] Updating apt packages..."
 apt-get update -y
-echo "[+] Packages updated."
+echo "[+] Repository added and packages updated."
 
-# Install the agent with manager address
+# Install the agent
 echo "[*] Installing wazuh-agent..."
-WAZUH_MANAGER="$WAZUH_MANAGER" apt-get install -y wazuh-agent
+apt-get install -y wazuh-agent
 echo "[+] Wazuh agent installed."
 
-# Configure agent name
-echo "[*] Configuring agent name..."
-sed -i "s|<node_name>.*</node_name>|<node_name>${AGENT_NAME}</node_name>|" /var/ossec/etc/ossec.conf
-echo "[+] Agent name set to '${AGENT_NAME}'."
+# Ensure correct server block in config
+echo "[*] Configuring server and agent name..."
+CONFIG_FILE="/var/ossec/etc/ossec.conf"
+# Backup first
+cp "$CONFIG_FILE" "${CONFIG_FILE}.bak"
 
-# Restart service
+# Add or replace server IP
+if grep -q "<server>" "$CONFIG_FILE"; then
+	sed -i "s|<address>.*</address>|<address>$WAZUH_MANAGER</address>|" "$CONFIG_FILE"
+else
+	# insert server block under <client> tag
+	sed -i "/<client>/a \ \ <server>\n\ \ \ \ <address>$WAZUH_MANAGER</address>\n\ \ </server>" "$CONFIG_FILE"
+fi
+
+# Set agent name
+sed -i "s|<node_name>.*</node_name>|<node_name>${AGENT_NAME}</node_name>|" "$CONFIG_FILE"
+echo "[+] Server and agent name configured."
+
+# Register agent and restart service
 echo "[*] Registering agent with manager..."
 agent-auth -m "$WAZUH_MANAGER" -A "$AGENT_NAME"
+systemctl enable wazuh-agent
 systemctl restart wazuh-agent
 echo "[+] Agent registered and restarted."
 
