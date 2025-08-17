@@ -78,7 +78,7 @@ echo "[+] Server and agent name configured."
 
 # Register agent and restart service
 echo "[*] Registering agent with manager..."
-agent-auth -m "$WAZUH_MANAGER" -A "$AGENT_NAME"
+/var/ossec/bin/agent-auth -m "$WAZUH_MANAGER" -A "$AGENT_NAME"
 systemctl enable wazuh-agent
 systemctl restart wazuh-agent
 echo "[+] Agent registered and restarted."
