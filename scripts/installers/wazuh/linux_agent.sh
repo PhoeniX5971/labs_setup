@@ -71,10 +71,10 @@ sed -i "s|<node_name>.*</node_name>|<node_name>${AGENT_NAME}</node_name>|" /var/
 echo "[+] Agent name set to '${AGENT_NAME}'."
 
 # Restart service
-echo "[*] Enabling and starting wazuh-agent..."
-systemctl enable wazuh-agent
+echo "[*] Registering agent with manager..."
+agent-auth -m "$WAZUH_MANAGER" -A "$AGENT_NAME"
 systemctl restart wazuh-agent
-echo "[+] wazuh-agent is active and enabled."
+echo "[+] Agent registered and restarted."
 
 # Summary
 echo "=================================="
