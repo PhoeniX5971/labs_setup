@@ -29,16 +29,6 @@ try
 	$params = "/Manager:$ManagerIP /AgentName:$AgentName"
 	choco install $PackageName --params="'$params'" -y
 	Success "$PackageName installed successfully on $AgentName pointing to $ManagerIP."
-
-	# At the very end of your script
-	try
-	{
-		Info "Restarting the machine to finalize Wazuh Agent installation..."
-		Restart-Computer -Force
-	} catch
-	{
-		ErrorMsg "Failed to restart the machine automatically. Please restart manually."
-	}
 } catch
 {
 	ErrorMsg "Installation of $PackageName failed."
