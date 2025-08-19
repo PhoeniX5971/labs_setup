@@ -16,7 +16,7 @@ function Warn($msg)
 # Check Size Before Install
 try
 {
-	. ./size_check.ps1 -RequiredGB 0.25 -Drive "C"
+	. ./../size_check.ps1 -RequiredGB 0.25 -Drive "C"
 } catch
 {
 	ErrorMsg "Installation aborted due to disk space check failure."
