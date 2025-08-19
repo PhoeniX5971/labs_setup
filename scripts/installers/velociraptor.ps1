@@ -16,10 +16,37 @@ function Warn($msg)
 Info "Fetching Velociraptor latest release info..."
 try
 {
-	$asset = $release.assets | Where-Object { $_.name -like "*windows-amd64.msi" } |
+	# Ensure TLS 1.2 for GitHub API on older Windows builds
+	try
+	{ [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 
+	} catch
+	{
+	}
+
+	$headers = @{
+		'User-Agent' = 'phoenix-velociraptor-installer'
+		'Accept'     = 'application/vnd.github+json'
+	}
+
+	$release = Invoke-RestMethod -Uri "https://api.github.com/repos/Velocidex/velociraptor/releases/latest" -Headers $headers
+
+	if (-not $release.assets)
+	{ throw "No assets found in the latest release." 
+	}
+
+	$asset = $release.assets |
+		Where-Object { $_.name -like "*windows-amd64.msi" } |
 		Sort-Object name -Descending |
 		Select-Object -First 1
+
+	if (-not $asset)
+	{ throw "No Windows x64 MSI asset found." 
+	}
+
 	$downloadUrl = $asset.browser_download_url
+	if (-not $downloadUrl)
+	{ throw "Asset has no download URL." 
+	}
 
 	# Extract version from filename (e.g., velociraptor-v0.74.5-windows-amd64.msi → 0.74.5)
 	if ($asset.name -match 'velociraptor-v([\d\.]+)-windows-amd64\.msi')
@@ -27,14 +54,15 @@ try
 		$version = $matches[1]
 	} else
 	{
-		$version = $release.tag_name
+		# Fallback to tag (strip leading v)
+		$version = ($release.tag_name -replace '^v','')
 	}
 
 	Success "Found Velociraptor version $version"
 	Info "Download URL: $downloadUrl"
 } catch
 {
-	ErrorMsg "Failed to fetch Velociraptor release info."
+	ErrorMsg "Failed to fetch Velociraptor release info. $($_.Exception.Message)"
 	exit 1
 }
 
