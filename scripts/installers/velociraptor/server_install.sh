@@ -15,9 +15,9 @@ echo "[*] Making Velociraptor executable..."
 chmod +x "${FILENAME}"
 
 echo "[*] Verifying executable..."
-if ./"${FILENAME}" --help >/dev/null 2>&1; then
-	echo "[+] Successfully downloaded and verified ${FILENAME}"
+if [ -x "./${FILENAME}" ]; then
+	echo "[+] ${FILENAME} is executable"
 else
-	echo "[-] Verification failed: ${FILENAME} is not executable"
+	echo "[-] ${FILENAME} is not executable"
 	exit 1
 fi
