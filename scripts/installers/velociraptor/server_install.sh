@@ -53,15 +53,50 @@ fi
 echo "[*] Creating installation directory at ${INSTALL_DIR}..."
 sudo mkdir -p "$INSTALL_DIR"
 
-# Generate the server configuration file (non-interactive)
+# Generate server config
 echo "[*] Generating server configuration..."
 sudo ./"${FILENAME}" config generate \
 	--server \
 	--non-interactive \
-	--config "${INSTALL_DIR}/velociraptor.config.yaml" \
+	--config "${INSTALL_DIR}/server.config.yaml" \
 	--port 8889 \
 	--admin-user "${ADMIN_USER}" \
 	--admin-password "${ADMIN_PASSWORD}" \
 	--data-dir "${INSTALL_DIR}/data"
 
 echo "[+] Velociraptor server configuration generated successfully."
+
+# Generate client config
+echo "[*] Generating client configuration..."
+sudo ./"${FILENAME}" config generate \
+	--client \
+	--non-interactive \
+	--config "${INSTALL_DIR}/client.config.yaml" \
+	--server "${INSTALL_DIR}/server.config.yaml" \
+	--data-dir "${INSTALL_DIR}/data/client"
+
+echo "[+] Velociraptor client configuration generated successfully."
+
+# Modify server config
+# Get the current machine IP (assuming eth0 / primary interface)
+CURRENT_IP=$(hostname -I | awk '{print $1}')
+
+echo "[*] Updating server GUI bind_address to ${CURRENT_IP}..."
+sudo sed -i "s/bind_address: 127\.0\.0\.1/bind_address: ${CURRENT_IP}/" "${INSTALL_DIR}/server.config.yaml"
+echo "[+] Server GUI will bind to ${CURRENT_IP}"
+
+# Setup debian server package
+echo "[*] Setting up debian server package..."
+sudo ./"${FILENAME} --config ${INSTALL_DIR}/server.config.yaml debian server --binary ${FILENAME}"
+
+DEB_FILE=$(find . -maxdepth 1 -type f -name "velociraptor_*.deb" | head -n 1)
+if [[ -f "$DEB_FILE" ]]; then
+	echo "[*] Found Debian package: $DEB_FILE"
+else
+	echo "[-] Could not find the generated .deb package."
+	exit 1
+fi
+echo "[*] Found Debian package: $DEB_FILE"
+
+# Install the debian package
+sudo dpkg -i "${DEB_FILE}"
