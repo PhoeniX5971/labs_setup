@@ -80,7 +80,6 @@ sudo mkdir -p "$INSTALL_DIR"
 # Generate server config
 echo "[*] Generating server configuration..."
 sudo ./"$FILENAME" config generate \
-	--server \
 	--config "${INSTALL_DIR}/server.config.yaml" \
 	--port 8889 \
 	--admin-user "$ADMIN_USER" \
@@ -91,7 +90,6 @@ echo "[+] Velociraptor server configuration generated successfully."
 # Generate client config
 echo "[*] Generating client configuration..."
 sudo ./"$FILENAME" config generate \
-	--client \
 	--config "${INSTALL_DIR}/client.config.yaml" \
 	--server "${INSTALL_DIR}/server.config.yaml" \
 	--data-dir "${INSTALL_DIR}/data/client"
