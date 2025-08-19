@@ -12,6 +12,17 @@ function Warn($msg)
 { Write-Host "[!] $msg" -ForegroundColor Magenta 
 }
 
+
+# Check Size Before Install
+try
+{
+	. ./size_check.ps1 -RequiredGB 0.25 -Drive "C"
+} catch
+{
+	ErrorMsg "Installation aborted due to disk space check failure."
+	exit 1
+}
+
 # Step 1: Fetch latest Velociraptor release from GitHub
 Info "Fetching Velociraptor latest release info..."
 try
