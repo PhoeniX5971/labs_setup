@@ -3,43 +3,33 @@ param(
 	[string]$password,
 
 	[Parameter(Mandatory = $true)]
-	[string]$ipaddr
+	[string]$ip
 )
 
 # --- Configuration ---
-Write-Host "IP IS: $ipaddr"
-$KibanaURL = "http://" + $ipaddr + ":5601"
+$KibanaURL      = "http://${ip}:5601"
+$ElasticUser    = "elastic"
+$ElasticPassword = $password
+$PolicyID       = "fleet-server-policy"
+
 Write-Host "Using Kibana URL: $KibanaURL"
 
-$ElasticUser = "elastic"
-$ElasticPassword = $password
-$PolicyID = "fleet-server-policy"
-
 # --- Create Fleet Enrollment Token ---
-$body = @{ policy_id = $PolicyID } | ConvertTo-Json
-
-# Encode credentials for Basic Auth
 $Base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${ElasticUser}:${ElasticPassword}"))
 
 Write-Host "Creating Fleet enrollment token..."
-try
-{
-	$response = Invoke-RestMethod -Uri "$KibanaURL/api/fleet/enrollment_api_keys" `
+$EnrollmentToken = (Invoke-RestMethod `
+		-Uri "$KibanaURL/api/fleet/enrollment_api_keys" `
 		-Headers @{
 		"kbn-xsrf"    = "true"
 		"Content-Type" = "application/json"
 		"Authorization" = "Basic $Base64AuthInfo"
 	} `
 		-Method POST `
-		-Body $body
+		-Body (@{ policy_id = $PolicyID } | ConvertTo-Json)
+).item.api_key
 
-	$EnrollmentToken = $response.item.api_key
-	Write-Host "Enrollment token created: $EnrollmentToken"
-} catch
-{
-	Write-Error "Failed to create enrollment token: $_"
-	exit 1
-}
+Write-Host "Enrollment token created: $EnrollmentToken"
 
 # --- Agent Installation ---
 $ElasticAgentZip = "C:\ElasticAgent\elastic-agent.zip"
@@ -50,8 +40,15 @@ if (-Not (Test-Path $ElasticAgentDir))
 	New-Item -ItemType Directory -Path $ElasticAgentDir | Out-Null
 }
 
-Write-Host "Downloading Elastic Agent..."
-Invoke-WebRequest -Uri "https://artifacts.elastic.co/downloads/beats/elastic-agent/elastic-agent-9.1.2-windows-x86_64.zip" -OutFile $ElasticAgentZip
+# Only download if zip doesn't exist
+if (-Not (Test-Path $ElasticAgentZip))
+{
+	Write-Host "Downloading Elastic Agent zip..."
+	Invoke-WebRequest -Uri "https://artifacts.elastic.co/downloads/beats/elastic-agent/elastic-agent-9.1.2-windows-x86_64.zip" -OutFile $ElasticAgentZip
+} else
+{
+	Write-Host "Elastic Agent zip already exists. Skipping download."
+}
 
 Write-Host "Extracting Elastic Agent..."
 Expand-Archive -Force $ElasticAgentZip -DestinationPath $ElasticAgentDir
@@ -59,11 +56,11 @@ Expand-Archive -Force $ElasticAgentZip -DestinationPath $ElasticAgentDir
 $AgentPath = Join-Path $ElasticAgentDir "elastic-agent-9.1.2-windows-x86_64"
 Set-Location $AgentPath
 
-# --- Install & Enroll Agent ---
+# --- Install & enroll Elastic Agent ---
 $AgentExe = Join-Path $AgentPath "elastic-agent.exe"
 $AgentArgs = @(
 	"install"
-	"--url", "http://$ipaddr:8220"
+	"--url", "http://${ip}:8220"
 	"--enrollment-token", $EnrollmentToken
 	"--insecure"
 	"-n"
