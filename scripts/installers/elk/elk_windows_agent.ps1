@@ -8,7 +8,7 @@ param(
 
 # --- Configuration ---
 Write-Host "IP IS: $ipaddr"
-$KibanaURL = [string]"http://$ipaddr:5601"
+$KibanaURL = "http://" + $ipaddr + ":5601"
 Write-Host "Using Kibana URL: $KibanaURL"
 
 $ElasticUser = "elastic"
