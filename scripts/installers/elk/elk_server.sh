@@ -2,6 +2,32 @@
 
 set -e
 
+# Default values
+ELASTIC_USER="elastic"
+ELASTIC_HOST="localhost"
+ELASTIC_PORT="9200"
+NEW_PASSWORD=""
+
+# Parse CLI arguments
+while [[ $# -gt 0 ]]; do
+	case $1 in
+	--password)
+		NEW_PASSWORD="$2"
+		shift 2
+		;;
+	*)
+		echo "[!] Unknown argument: $1"
+		echo "Usage: $0 [--password <new_password>]"
+		exit 1
+		;;
+	esac
+done
+
+if [[ -z "$NEW_PASSWORD" ]]; then
+	echo "[!] No password provided. Use --password <new_password>"
+	exit 1
+fi
+
 echo "[*] Updating system packages..."
 sudo apt update -y
 sudo apt upgrade -y
@@ -144,3 +170,19 @@ sudo ./elastic-agent install \
 	--fleet-server-insecure-http
 
 echo "[✔] Fleet Server enrolled and agent installed successfully!"
+
+sudo docker compose -f docker-compose.yml -f extensions/fleet/fleet-compose.yml up -d
+
+echo "[*] Resetting 'elastic' password via REST API..."
+
+curl -s -u "$ELASTIC_USER:$ELASTIC_PASSWORD" \
+	-H "Content-Type: application/json" \
+	-X POST "http://$ELASTIC_HOST:$ELASTIC_PORT/_security/user/$ELASTIC_USER/_password" \
+	-d "{\"password\":\"$NEW_PASSWORD\"}"
+
+if [[ $? -eq 0 ]]; then
+	echo "[+] Password for '$ELASTIC_USER' reset successfully to: $NEW_PASSWORD"
+else
+	echo "[!] Failed to reset password"
+	exit 1
+fi
