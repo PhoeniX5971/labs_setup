@@ -7,7 +7,7 @@ param(
 )
 
 # --- Configuration ---
-Write-Host "$ip"
+Write-Host "IP IS: $ipaddr"
 $KibanaURL = [string]"http://$ipaddr:5601"
 Write-Host "Using Kibana URL: $KibanaURL"
 
