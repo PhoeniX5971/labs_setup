@@ -1,0 +1,206 @@
+name: Run selected exercise scripts (admin approval) & merge
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to test (e.g., 42)"
+        required: true
+        type: string
+      order:
+        description: "Categories in desired order (comma-separated). Any of: software,attacks,vulnerabilities"
+        required: true
+        default: "software,attacks,vulnerabilities"
+        type: string
+      exercises:
+        description: "Exercises to include (comma-separated), or 'all'"
+        required: true
+        default: "all"
+        type: string
+      merge_method:
+        description: "Merge method if all pass (merge|squash|rebase)"
+        required: true
+        default: "squash"
+        type: choice
+        options:
+          - merge
+          - squash
+          - rebase
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    # Require an Environment with required reviewers (Settings → Environments → approval → Required reviewers)
+    environment: approval
+
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          # Pull the PR's head ref directly
+          ref: refs/pull/${{ inputs.pr_number }}/head
+          fetch-depth: 1
+
+      - name: Show inputs
+        run: |
+          echo "PR: ${{ inputs.pr_number }}"
+          echo "ORDER: ${{ inputs.order }}"
+          echo "EXERCISES: ${{ inputs.exercises }}"
+          echo "MERGE METHOD: ${{ inputs.merge_method }}"
+
+      - name: Validate folder structure and gather exercises (only chosen)
+        id: gather
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Ensure base dir exists
+          if [ ! -d exercises ]; then
+            echo "::error::No 'exercises/' directory found at repo root."
+            exit 1
+          fi
+
+          # Discover all exercise folders (top-level under exercises/)
+          mapfile -t ALL_EXS < <(find exercises -mindepth 1 -maxdepth 1 -type d -printf "%f\n" | sort)
+          if [ "${#ALL_EXS[@]}" -eq 0 ]; then
+            echo "::error::No exercise subfolders found under 'exercises/'."
+            exit 1
+          fi
+
+          # Build the selected set
+          FILTER="${{ inputs.exercises }}"
+          : > .exercise_list
+          if [ "$FILTER" = "all" ]; then
+            printf "%s\n" "${ALL_EXS[@]}" > .exercise_list
+          else
+            # Normalize: remove spaces, split on commas, preserve input order
+            FILTER=$(echo "$FILTER" | tr -d ' ')
+            IFS=',' read -r -a REQ <<< "$FILTER"
+
+            # Optional de-dup while preserving order
+            declare -A SEEN=()
+            for R in "${REQ[@]}"; do
+              if [ -n "${SEEN[$R]+x}" ]; then
+                continue
+              fi
+              SEEN[$R]=1
+              if [ -d "exercises/$R" ]; then
+                echo "$R" >> .exercise_list
+              else
+                echo "::warning::Exercise '$R' not found; skipping."
+              fi
+            done
+
+            if [ ! -s .exercise_list ]; then
+              echo "::error::No valid exercises match the filter."
+              exit 1
+            fi
+          fi
+
+          # Validate ONLY the selected exercises have required category folders
+          mapfile -t SEL < .exercise_list
+          MISSING=0
+          for E in "${SEL[@]}"; do
+            for C in software attacks vulnerabilities; do
+              if [ ! -d "exercises/$E/$C" ]; then
+                echo "::error::Missing required folder 'exercises/$E/$C'."
+                MISSING=1
+              fi
+            done
+          done
+          if [ "$MISSING" -ne 0 ]; then
+            exit 1
+          fi
+
+          # Normalize & validate the category order input
+          ORDER=$(echo "${{ inputs.order }}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+          IFS=',' read -r -a ORD <<< "$ORDER"
+          OK=1
+          for CAT in "${ORD[@]}"; do
+            case "$CAT" in
+              software|attacks|vulnerabilities) : ;;
+              *) echo "::error::Invalid category '$CAT' in order."; OK=0 ;;
+            esac
+          done
+          if [ "$OK" -ne 1 ]; then
+            exit 1
+          fi
+
+          # Expose outputs
+          echo "order=$ORDER" >> "$GITHUB_OUTPUT"
+          echo "exercises=$(paste -sd',' .exercise_list)" >> "$GITHUB_OUTPUT"
+
+            - name: Run selected scripts in order (stop on first failure)
+              id: run
+              shell: bash
+              run: |
+                set -euo pipefail
+
+                ORDER="${{ steps.gather.outputs.order }}"
+                EXS_CSV="${{ steps.gather.outputs.exercises }}"
+
+                IFS=',' read -r -a EXS <<< "$EXS_CSV"
+                IFS=',' read -r -a ORD <<< "$ORDER"
+
+                echo "## Test Plan" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "**Exercises:** ${EXS[*]}" >> $GITHUB_STEP_SUMMARY
+                echo "**Order:** ${ORD[*]}" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "| Exercise | Category | Script | Result |" >> $GITHUB_STEP_SUMMARY
+                echo "|---|---|---|---|" >> $GITHUB_STEP_SUMMARY
+
+                fail() {
+                  echo "| $1 | $2 | \`$3\` | ❌ Fail |" >> $GITHUB_STEP_SUMMARY
+                  echo "::error::$1/$2 script failed: $3"
+                  exit 1
+                }
+
+                for CAT in "${ORD[@]}"; do
+                  for E in "${EXS[@]}"; do
+                    DIR="exercises/$E/$CAT"
+                    # Run .sh files
+                    while IFS= read -r -d '' f; do
+                      chmod +x "$f" || true
+                      if bash "$f"; then
+                        echo "| $E | $CAT | \`$f\` | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+                      else
+                        fail "$E" "$CAT" "$f"
+                      fi
+                    done < <(find "$DIR" -maxdepth 1 -type f -name "*.sh" -print0 | sort -z)
+
+                    # Run .ps1 files (PowerShell 7)
+                    while IFS= read -r -d '' f; do
+                      if pwsh -NoLogo -NoProfile -NonInteractive -File "$f"; then
+                        echo "| $E | $CAT | \`$f\` | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+                      else
+                        fail "$E" "$CAT" "$f"
+                      fi
+                    done < <(find "$DIR" -maxdepth 1 -type f -name "*.ps1" -print0 | sort -z)
+                  done
+                done
+
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "All selected scripts passed ✅" >> $GITHUB_STEP_SUMMARY
+
+  auto-merge:
+    needs: run-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable gh with token
+        run: echo "GH_TOKEN=${GITHUB_TOKEN}" >> $GITHUB_ENV
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge the PR
+        env:
+          GH_TOKEN: ${{ env.GH_TOKEN }}
+        run: |
+          PR=${{ inputs.pr_number }}
+          METHOD=${{ inputs.merge_method }}
+          # METHOD can be: merge | squash | rebase
+          gh pr merge "$PR" --"$METHOD" --delete-branch --admin || gh pr merge "$PR" --"$METHOD" --delete-branch

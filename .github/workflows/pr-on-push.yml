@@ -1,0 +1,113 @@
+name: PR on push (create/update & index exercises)
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  prepare-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pushed branch
+        uses: actions/checkout@v4
+
+      - name: Ensure gh uses GITHUB_TOKEN
+        run: echo "GH_TOKEN=${GITHUB_TOKEN}" >> $GITHUB_ENV
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine branch name
+        id: br
+        run: echo "name=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Create PR if it doesn't exist
+        id: pr
+        env:
+          GH_TOKEN: ${{ env.GH_TOKEN }}
+        run: |
+          BR="${{ steps.br.outputs.name }}"
+          if [ "$BR" = "main" ]; then
+            echo "on main; skipping PR creation."
+            echo "number=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Get existing PR number (if any)
+          EXISTING=$(gh pr list --head "$BR" --json number -q '.[0].number' || true)
+          if [ -z "$EXISTING" ]; then
+            gh pr create -B main -H "$BR" -t "Auto PR: $BR" -b "Automated PR for branch **$BR**"
+            PRNUM=$(gh pr list --head "$BR" --json number -q '.[0].number')
+          else
+            PRNUM="$EXISTING"
+          fi
+
+          echo "number=$PRNUM" >> $GITHUB_OUTPUT
+          echo "PR #$PRNUM"
+
+      - name: Index exercise scripts
+        id: index
+        run: |
+          mkdir -p .artifacts
+          echo "exercise,category,script" > .artifacts/scripts.csv
+
+          if [ -d exercises ]; then
+            # Find all .sh and .ps1
+            while IFS= read -r -d '' f; do
+              # expected path: exercises/<exercise>/<category>/<file>
+              # extract exercise and category
+              REL="${f#exercises/}"
+              EX="${REL%%/*}"            # exercise
+              REST="${REL#*/}"
+              CAT="${REST%%/*}"          # category
+              echo "$EX,$CAT,$f" >> .artifacts/scripts.csv
+            done < <(find exercises -type f \( -name "*.sh" -o -name "*.ps1" \) -print0)
+          fi
+
+          echo "Indexed scripts:"
+          cat .artifacts/scripts.csv
+
+      - name: Upload scripts list artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scripts-index
+          path: .artifacts/scripts.csv
+          if-no-files-found: warn
+
+      - name: Post PR comment with instructions
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ env.GH_TOKEN }}
+        run: |
+          PR=${{ steps.pr.outputs.number }}
+
+          # Build a short summary for job summary & PR comment
+          {
+            echo "### Exercises scripts discovered"
+            echo ""
+            if [ -s .artifacts/scripts.csv ]; then
+              echo '| Exercise | Category | Script |'
+              echo '|---|---|---|'
+              tail -n +2 .artifacts/scripts.csv | while IFS=, read -r ex cat path; do
+                echo "| \`$ex\` | \`$cat\` | \`$path\` |"
+              done
+            else
+              echo "_No scripts found under \`exercises/\`_"
+            fi
+            echo ""
+            echo "**How to run tests (admin):**"
+            echo "1. Go to **Actions** → **Run selected exercise scripts**"
+            echo "2. Provide **PR number**: \`$PR\`"
+            echo "3. Choose order (e.g.) \`software,attacks,vulnerabilities\`"
+            echo "4. Optionally limit to certain exercises (comma-separated), or leave \`all\`"
+            echo "5. Click **Run workflow**. Approval is required."
+          } > .tmp_comment.md
+
+          gh pr comment "$PR" --body-file .tmp_comment.md
+
+      - name: Add to job summary
+        run: cat .tmp_comment.md >> $GITHUB_STEP_SUMMARY
