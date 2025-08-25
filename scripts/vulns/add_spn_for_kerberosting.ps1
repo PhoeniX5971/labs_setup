@@ -40,26 +40,46 @@ param(
 	[string]$ServicePrincipalName
 )
 
+# Ensure the AD module is available
+if (-not (Get-Module -ListAvailable -Name ActiveDirectory))
+{
+	Write-Host "[-] ActiveDirectory module not found. Please install RSAT tools." -ForegroundColor Red
+	exit 1
+}
+Import-Module ActiveDirectory
+
 $user = Get-ADUser -Identity $UserIdentity -Properties userAccountControl -ErrorAction SilentlyContinue
 if (-not $user)
 {
-	Write-Host "User '$UserIdentity' not found. Creating new user..."
-	# Adjust these parameters as needed for your environment
+	Write-Host "[*] User '$UserIdentity' not found. Creating new user..." -ForegroundColor Cyan
+
 	New-ADUser -Name $UserIdentity `
 		-SamAccountName $UserIdentity `
 		-AccountPassword (ConvertTo-SecureString "P@ssw0rd123!" -AsPlainText -Force) `
 		-Enabled $true `
 		-PasswordNeverExpires $true
-	# Optionally, re-fetch the user object
-	$user = Get-ADUser -Identity $UserIdentity -Properties userAccountControl
-}
 
-# Ensure the AD module is available
-if (-not (Get-Module -ListAvailable -Name ActiveDirectory))
+	$user = Get-ADUser -Identity $UserIdentity -Properties userAccountControl
+	Write-Host "[+] User '$UserIdentity' created successfully." -ForegroundColor Green
+} else
 {
-	Write-Error "ActiveDirectory module not found. Please install RSAT tools."
-	exit
+	Write-Host "[*] User '$UserIdentity' exists. Adding SPN..." -ForegroundColor Cyan
 }
-Import-Module ActiveDirectory
 
 Set-ADUser -Identity $UserIdentity -ServicePrincipalNames @{Add=$ServicePrincipalName}
+Write-Host "[+] SPN '$ServicePrincipalName' added to '$UserIdentity'." -ForegroundColor Green
+
+##################################################
+#  CHECKER: VERIFY SPN WAS ADDED                #
+##################################################
+
+$userCheck = Get-ADUser -Identity $UserIdentity -Properties ServicePrincipalNames
+if ($userCheck.ServicePrincipalNames -contains $ServicePrincipalName)
+{
+	Write-Host "[SUCCESS] SPN successfully applied to '$UserIdentity'!" -ForegroundColor Green
+	exit 0
+} else
+{
+	Write-Host "[FAIL] SPN was not applied to '$UserIdentity'!" -ForegroundColor Red
+	exit 1
+}
