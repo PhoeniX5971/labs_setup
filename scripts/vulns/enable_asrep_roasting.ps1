@@ -38,8 +38,8 @@ param(
 # Ensure the AD module is available
 if (-not (Get-Module -ListAvailable -Name ActiveDirectory))
 {
-	Write-Error "ActiveDirectory module not found. Please install RSAT tools."
-	exit
+	Write-Host "[-] ActiveDirectory module not found. Please install RSAT tools." -ForegroundColor Red
+	exit 1
 }
 Import-Module ActiveDirectory
 
@@ -47,29 +47,49 @@ Import-Module ActiveDirectory
 $user = Get-ADUser -Identity $UserIdentity -Properties userAccountControl -ErrorAction SilentlyContinue
 if (-not $user)
 {
-	Write-Host "User '$UserIdentity' not found. Creating new user..."
-	# Adjust these parameters as needed for your environment
+	Write-Host "[*] User '$UserIdentity' not found. Creating new user..." -ForegroundColor Cyan
+
 	New-ADUser -Name $UserIdentity `
 		-SamAccountName $UserIdentity `
 		-AccountPassword (ConvertTo-SecureString "P@ssw0rd123!" -AsPlainText -Force) `
 		-Enabled $true `
 		-PasswordNeverExpires $true
-	# Optionally, re-fetch the user object
+
 	$user = Get-ADUser -Identity $UserIdentity -Properties userAccountControl
+	Write-Host "[+] User '$UserIdentity' created successfully." -ForegroundColor Green
+} else
+{
+	Write-Host "[*] User '$UserIdentity' exists. Applying AS-REP Roasting flag..." -ForegroundColor Cyan
 }
 
 $currentFlags = $user.userAccountControl
 if (-not $currentFlags)
 {
-	Write-Error "Failed to retrieve userAccountControl flags."
-	exit
+	Write-Host "[-] Failed to retrieve userAccountControl flags." -ForegroundColor Red
+	exit 1
 }
 
 # 4194304 = 0x00400000 (flag for DONT_REQUIRE_PREAUTH)
 $DONT_REQUIRE_PREAUTH = 4194304
-
-# Add the flag using bitwise OR
 $newFlags = $currentFlags -bor $DONT_REQUIRE_PREAUTH
 
-# Apply the change using -Replace
+# Apply the change
 Set-ADUser -Identity $UserIdentity -Replace @{userAccountControl = $newFlags}
+Write-Host "[+] DONT_REQUIRE_PREAUTH flag applied to '$UserIdentity'." -ForegroundColor Green
+
+##################################################
+#  CHECKER: VERIFY FLAG AND EXIT CODE           #
+##################################################
+
+$userCheck = Get-ADUser -Identity $UserIdentity -Properties userAccountControl
+$flagSet = ($userCheck.userAccountControl -band $DONT_REQUIRE_PREAUTH) -eq $DONT_REQUIRE_PREAUTH
+
+if ($flagSet)
+{
+	Write-Host "[SUCCESS] AS-REP Roasting flag successfully applied to '$UserIdentity'!" -ForegroundColor Green
+	exit 0
+} else
+{
+	Write-Host "[FAIL] AS-REP Roasting flag was not applied to '$UserIdentity'!" -ForegroundColor Red
+	exit 1
+}
