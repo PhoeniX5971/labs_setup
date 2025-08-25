@@ -28,39 +28,54 @@ Intended for lab and educational use only.
 #  ESC11: DISABLE ENCRYPTED CERT REQ ENFORCEMENT #
 ##################################################
 
-# Check if Certificate Services (certsvc) is installed
-Write-Host "[*] Checking if Certificate Services (certsvc) is installed..."
+Write-Host "[*] Checking if Certificate Services (certsvc) is installed..." -ForegroundColor Cyan
 $certsvc = Get-Service -Name certsvc -ErrorAction SilentlyContinue
 
 if (-not $certsvc)
 {
 	Write-Warning "[!] Certificate Services not found. Installing ADCS Certification Authority..."
 
-	# Install ADCS role with management tools
 	Install-WindowsFeature ADCS-Cert-Authority -IncludeManagementTools
-
-	# Configure a default Enterprise Root CA (for lab purposes)
 	Install-AdcsCertificationAuthority -CAType EnterpriseRootCA -Force
 
-	# Refresh the service object
 	Start-Sleep -Seconds 5
 	$certsvc = Get-Service -Name certsvc -ErrorAction SilentlyContinue
 
 	if (-not $certsvc)
 	{
-		Write-Error "[-] Failed to install or detect certsvc. Aborting setup."
+		Write-Host "[-] Failed to install or detect certsvc. Aborting setup." -ForegroundColor Red
 		exit 1
 	}
 
-	Write-Host "[+] ADCS Certification Authority installed successfully."
+	Write-Host "[+] ADCS Certification Authority installed successfully." -ForegroundColor Green
 }
 
-# Set the CA flag to make it vulnerable (ESC11)
-Write-Host "[*] Setting IF_ENFORCEENCRYPTICERTREQUEST flag..."
+Write-Host "[*] Setting IF_ENFORCEENCRYPTICERTREQUEST flag..." -ForegroundColor Cyan
 certutil.exe -setreg CA\InterfaceFlags -IF_ENFORCEENCRYPTICERTREQUEST
 
-# Restart Certificate Services to apply change
-Write-Host "[*] Restarting Certificate Services..."
+Write-Host "[*] Restarting Certificate Services..." -ForegroundColor Cyan
 Restart-Service -Name certsvc -Force
 
-Write-Host "[+] ESC11 setup complete. CA is now vulnerable to unencrypted cert requests."
+Write-Host "[+] ESC11 setup complete. CA is now vulnerable to unencrypted cert requests." -ForegroundColor Green
+
+##################################################
+#  CHECKER: VERIFY FLAG AND EXIT CODE           #
+##################################################
+
+# Get the current InterfaceFlags value
+$caName = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration").PSChildName
+$flagsPath = "HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration\$caName"
+$interfaceFlags = (Get-ItemProperty -Path $flagsPath -Name InterfaceFlags -ErrorAction SilentlyContinue).InterfaceFlags
+
+# IF_ENFORCEENCRYPTICERTREQUEST = 0x200 (512)
+$flagCleared = ($interfaceFlags -band 0x200) -eq 0
+
+if ($flagCleared)
+{
+	Write-Host "[SUCCESS] IF_ENFORCEENCRYPTICERTREQUEST flag disabled correctly. ESC11 applied!" -ForegroundColor Green
+	exit 0
+} else
+{
+	Write-Host "[FAIL] IF_ENFORCEENCRYPTICERTREQUEST flag still set! ESC11 failed!" -ForegroundColor Red
+	exit 1
+}
