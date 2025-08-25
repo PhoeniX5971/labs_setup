@@ -34,23 +34,43 @@ param(
 # Ensure the AD module is available
 if (-not (Get-Module -ListAvailable -Name ActiveDirectory))
 {
-	Write-Error "ActiveDirectory module not found. Please install RSAT tools."
-	exit
+	Write-Host "[-] ActiveDirectory module not found. Please install RSAT tools." -ForegroundColor Red
+	exit 1
 }
 Import-Module ActiveDirectory
 
 $user = Get-ADUser -Identity $UserIdentity -Properties userAccountControl -ErrorAction SilentlyContinue
 if (-not $user)
 {
-	Write-Host "User '$UserIdentity' not found. Creating new user..."
-	# Adjust these parameters as needed for your environment
+	Write-Host "[*] User '$UserIdentity' not found. Creating new user..." -ForegroundColor Cyan
+
 	New-ADUser -Name $UserIdentity `
 		-SamAccountName $UserIdentity `
 		-AccountPassword (ConvertTo-SecureString "P@ssw0rd123!" -AsPlainText -Force) `
 		-Enabled $true `
 		-PasswordNeverExpires $true
-	# Optionally, re-fetch the user object
+
 	$user = Get-ADUser -Identity $UserIdentity -Properties userAccountControl
+	Write-Host "[+] User '$UserIdentity' created successfully." -ForegroundColor Green
+} else
+{
+	Write-Host "[*] User '$UserIdentity' exists. Enabling unconstrained delegation..." -ForegroundColor Cyan
 }
 
 Set-ADAccountControl -Identity $UserIdentity -TrustedForDelegation $true
+Write-Host "[+] Unconstrained delegation enabled for '$UserIdentity'." -ForegroundColor Green
+
+##################################################
+#  CHECKER: VERIFY FLAG AND EXIT CODE           #
+##################################################
+
+$userCheck = Get-ADUser -Identity $UserIdentity -Properties TrustedForDelegation
+if ($userCheck.TrustedForDelegation)
+{
+	Write-Host "[SUCCESS] '$UserIdentity' is now trusted for delegation!" -ForegroundColor Green
+	exit 0
+} else
+{
+	Write-Host "[FAIL] Failed to enable unconstrained delegation for '$UserIdentity'!" -ForegroundColor Red
+	exit 1
+}
