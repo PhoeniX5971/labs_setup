@@ -27,4 +27,24 @@ Author: Phoenix (example)
 Intended for lab/testing purposes. Do not use in production environments.
 #>
 
-Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel" -Value 2 -Type DWord -Verbose
+$path = "HKLM:\System\CurrentControlSet\Control\Lsa"
+$name = "LmCompatibilityLevel"
+$value = 2
+
+Write-Host "[*] Setting LMCompatibilityLevel to $value..." -ForegroundColor Cyan
+
+# Apply the registry change
+Set-ItemProperty -Path $path -Name $name -Value $value -Type DWord -Verbose
+
+# Verify the change
+$currentValue = Get-ItemProperty -Path $path -Name $name -ErrorAction SilentlyContinue | Select-Object -ExpandProperty $name
+
+if ($currentValue -eq $value)
+{
+	Write-Host "[SUCCESS] LMCompatibilityLevel successfully set to $value." -ForegroundColor Green
+	exit 0
+} else
+{
+	Write-Host "[FAIL] Failed to set LMCompatibilityLevel. Current value: $currentValue" -ForegroundColor Red
+	exit 1
+}
