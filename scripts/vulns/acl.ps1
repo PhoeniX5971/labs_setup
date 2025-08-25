@@ -39,7 +39,7 @@ param(
 if (-not (Get-Module -ListAvailable -Name ActiveDirectory))
 {
 	Write-Error "ActiveDirectory module not found. Please install RSAT tools."
-	exit
+	exit 1
 }
 Import-Module ActiveDirectory
 
@@ -69,9 +69,17 @@ $ACL.AddAccessRule($Rule)
 $TargetDE.ObjectSecurity = $ACL
 $TargetDE.CommitChanges()
 
-Write-Host "[+] Successfully granted GenericAll rights to $($LowPriv.SamAccountName) over $($Target.SamAccountName)" -ForegroundColor Green
+# Confirm that GenericAll was applied
+$appliedRule = $ACL.Access | Where-Object {
+	$_.IdentityReference -eq $LowPriv.SamAccountName -or $_.IdentityReference -eq "LAB\$($LowPriv.SamAccountName)" -and $_.ActiveDirectoryRights -match "GenericAll"
+}
 
-# Check if low-priv user is listed
-$ACL.Access | Where-Object {
-	$_.IdentityReference -like "*$LowPrivUser*" -and $_.ActiveDirectoryRights -match "GenericAll"
+if ($appliedRule)
+{
+	Write-Host "[+] Successfully granted GenericAll rights to $($LowPriv.SamAccountName) over $($Target.SamAccountName)" -ForegroundColor Green
+	exit 0   # success code
+} else
+{
+	Write-Host "[-] Failed to apply GenericAll rights to $($LowPriv.SamAccountName)" -ForegroundColor Red
+	exit 1   # failure code
 }
