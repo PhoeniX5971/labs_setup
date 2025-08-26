@@ -34,7 +34,8 @@ param(
 	[Parameter(Mandatory=$true)][string]$NewPassword,
 	[Parameter(Mandatory=$true)][string]$LowPrivUser,
 	[Parameter(Mandatory=$true)][string]$LowPrivPassword,
-	[Parameter(Mandatory=$false)][string]$Domain
+	[Parameter(Mandatory=$false)][string]$TargetDomain,
+	[Parameter(Mandatory=$false)][string]$LowPrivDomain
 )
 
 function Write-Ok
@@ -55,36 +56,41 @@ if (-not (Get-Module -ListAvailable -Name ActiveDirectory))
 }
 Import-Module ActiveDirectory
 
-# --- Determine domain ---
-if (-not $Domain)
-{
-	$Domain = (Get-ADDomain).NetBIOSName
-	Write-Info "Using current domain: $Domain"
+# --- Determine domains ---
+if (-not $TargetDomain)
+{ $TargetDomain = (Get-ADDomain).NetBIOSName; Write-Info "Using current domain for target: $TargetDomain" 
 } else
-{
-	Write-Info "Using specified domain: $Domain"
+{ Write-Info "Using specified domain for target: $TargetDomain" 
+}
+
+if (-not $LowPrivDomain)
+{ $LowPrivDomain = (Get-ADDomain).NetBIOSName; Write-Info "Using current domain for low-priv user: $LowPrivDomain" 
+} else
+{ Write-Info "Using specified domain for low-priv user: $LowPrivDomain" 
 }
 
 # --- Create low-priv credentials ---
 $SecurePass = ConvertTo-SecureString $LowPrivPassword -AsPlainText -Force
-$Creds = New-Object System.Management.Automation.PSCredential ("$Domain\$LowPrivUser", $SecurePass)
+$Creds = New-Object System.Management.Automation.PSCredential ("$LowPrivDomain\$LowPrivUser", $SecurePass)
 
 # --- Ensure target exists ---
 try
 {
-	$Target = Get-ADUser -Identity $TargetUser -ErrorAction Stop -Credential $Creds
-	Write-Info "Target user '$TargetUser' found."
+	$Target = Get-ADUser -Identity "$TargetDomain\$TargetUser" -Credential $Creds -ErrorAction Stop
+	Write-Info "Target user '$TargetDomain\$TargetUser' found."
 } catch
 {
-	Write-Bad "Target user '$TargetUser' not found or no permission to access."
+	Write-Bad "Target user '$TargetDomain\$TargetUser' not found or no permission to access."
 	exit 1
 }
 
 # --- Reset password ---
-Write-Info "Resetting password for '$TargetUser'..."
+Write-Info "Resetting password for '$TargetDomain\$TargetUser'..."
 try
 {
-	Set-ADAccountPassword -Identity $TargetUser -NewPassword (ConvertTo-SecureString $NewPassword -AsPlainText -Force) -Reset -Credential $Creds -ErrorAction Stop
+	Set-ADAccountPassword -Identity "$TargetDomain\$TargetUser" `
+		-NewPassword (ConvertTo-SecureString $NewPassword -AsPlainText -Force) `
+		-Reset -Credential $Creds -ErrorAction Stop
 	Write-Ok "Password reset to '$NewPassword'"
 } catch
 {
@@ -95,9 +101,9 @@ try
 # --- Validate new password ---
 try
 {
-	$ValidationCreds = New-Object System.Management.Automation.PSCredential ("$Domain\$TargetUser", (ConvertTo-SecureString $NewPassword -AsPlainText -Force))
-	$null = Get-ADUser -Identity $TargetUser -Credential $ValidationCreds -ErrorAction Stop
-	Write-Ok "Validation success: authenticated as '$TargetUser' with new password."
+	$ValidationCreds = New-Object System.Management.Automation.PSCredential ("$TargetDomain\$TargetUser", (ConvertTo-SecureString $NewPassword -AsPlainText -Force))
+	$null = Get-ADUser -Identity "$TargetDomain\$TargetUser" -Credential $ValidationCreds -ErrorAction Stop
+	Write-Ok "Validation success: authenticated as '$TargetDomain\$TargetUser' with new password."
 	exit 0
 } catch
 {
