@@ -21,7 +21,7 @@ The SamAccountName of the target user (e.g., "domainadmin").
 The SamAccountName of the low-privileged user to which GenericAll rights will be granted.
 
 .EXAMPLE
-PS> .\weak_perms_on_user.ps1 -TargetUser "domainadmin" -LowPrivUser "low.priv"
+PS> .\weak_acl.ps1 -TargetUser "domainadmin" -LowPrivUser "low.priv"
 Grants "low.priv" GenericAll permissions over "domainadmin".
 #>
 
@@ -47,7 +47,7 @@ try
 } catch
 {
 	Write-Host "[*] Low-privileged user '$LowPrivUser' not found. Creating..." -ForegroundColor Yellow
-	$LowPriv = New-ADUser -Name $LowPrivUser -SamAccountName $LowPrivUser -AccountPassword (ConvertTo-SecureString "Passw0rd!" -AsPlainText -Force) -Enabled $true
+	$LowPriv = New-ADUser -Name $LowPrivUser -SamAccountName $LowPrivUser -AccountPassword (ConvertTo-SecureString "p@ssw0rd123!" -AsPlainText -Force) -Enabled $true
 	Write-Host "[+] Created low-privileged user: $LowPrivUser" -ForegroundColor Green
 }
 
@@ -58,11 +58,11 @@ try
 } catch
 {
 	Write-Host "[*] Target user '$TargetUser' not found. Creating with higher privileges..." -ForegroundColor Yellow
-	$Target = New-ADUser -Name $TargetUser -SamAccountName $TargetUser -AccountPassword (ConvertTo-SecureString "Adm1nPass!" -AsPlainText -Force) -Enabled $true
+	$Target = New-ADUser -Name $TargetUser -SamAccountName $TargetUser -AccountPassword (ConvertTo-SecureString "p@ssw0rd123!" -AsPlainText -Force) -Enabled $true
 	# Try to add to Domain Admins
 	try
 	{
-		Add-ADGroupMember -Identity "Domain Admins" -Members $Target
+		Add-ADGroupMember -Identity "Domain Admins" -Members $Target.SamAccountName
 		Write-Host "[+] Added $TargetUser to 'Domain Admins'" -ForegroundColor Green
 	} catch
 	{
