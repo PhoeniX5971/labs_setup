@@ -26,87 +26,91 @@ Grants "low.priv" GenericAll permissions over "domainadmin".
 #>
 
 param(
-	[Parameter(Mandatory=$true)]
-	[string]$TargetUser,
-
-	[Parameter(Mandatory=$true)]
-	[string]$LowPrivUser
+	[Parameter(Mandatory=$true)][string]$TargetUser,
+	[Parameter(Mandatory=$true)][string]$LowPrivUser
 )
 
+# --- Check AD module ---
 if (-not (Get-Module -ListAvailable -Name ActiveDirectory))
 {
-	Write-Error "ActiveDirectory module not found. Please install RSAT tools."
+	Write-Error "ActiveDirectory module not found. Install RSAT tools."
 	exit 1
 }
 Import-Module ActiveDirectory
 
+function Write-Ok
+{ param([string]$m) Write-Host "[+] $m" -ForegroundColor Green 
+}
+function Write-Bad
+{ param([string]$m) Write-Host "[-] $m" -ForegroundColor Red 
+}
+function Write-Info
+{ param([string]$m) Write-Host "[*] $m" -ForegroundColor Cyan 
+}
+
 # --- Ensure LowPrivUser exists ---
 try
-{
-	$LowPriv = Get-ADUser -Identity $LowPrivUser -ErrorAction Stop
+{ $LowPriv = Get-ADUser -Identity $LowPrivUser -ErrorAction Stop 
 } catch
 {
-	Write-Host "[*] Low-privileged user '$LowPrivUser' not found. Creating..." -ForegroundColor Yellow
-	$LowPriv = New-ADUser -Name $LowPrivUser -SamAccountName $LowPrivUser -AccountPassword (ConvertTo-SecureString "p@ssw0rd123!" -AsPlainText -Force) -Enabled $true
-	Write-Host "[+] Created low-privileged user: $LowPrivUser" -ForegroundColor Green
+	Write-Info "Low-privileged user '$LowPrivUser' not found. Creating..."
+	$LowPriv = New-ADUser -Name $LowPrivUser -SamAccountName $LowPrivUser `
+		-AccountPassword (ConvertTo-SecureString "p@ssw0rd123!" -AsPlainText -Force) -Enabled $true
+	Write-Ok "Created low-privileged user: $LowPrivUser"
 }
 
 # --- Ensure TargetUser exists ---
 try
-{
-	$Target = Get-ADUser -Identity $TargetUser -ErrorAction Stop
+{ $Target = Get-ADUser -Identity $TargetUser -ErrorAction Stop 
 } catch
 {
-	Write-Host "[*] Target user '$TargetUser' not found. Creating with higher privileges..." -ForegroundColor Yellow
-	$Target = New-ADUser -Name $TargetUser -SamAccountName $TargetUser -AccountPassword (ConvertTo-SecureString "p@ssw0rd123!" -AsPlainText -Force) -Enabled $true
-	# Try to add to Domain Admins
+	Write-Info "Target user '$TargetUser' not found. Creating..."
+	$Target = New-ADUser -Name $TargetUser -SamAccountName $TargetUser `
+		-AccountPassword (ConvertTo-SecureString "p@ssw0rd123!" -AsPlainText -Force) -Enabled $true
+	# Add to Domain Admins if possible
 	try
 	{
 		Add-ADGroupMember -Identity "Domain Admins" -Members $Target.SamAccountName
-		Write-Host "[+] Added $TargetUser to 'Domain Admins'" -ForegroundColor Green
+		Write-Ok "Added $TargetUser to Domain Admins"
 	} catch
 	{
-		Write-Host "[-] Could not add $TargetUser to 'Domain Admins'. Created as regular user." -ForegroundColor Yellow
+		Write-Info "Could not add $TargetUser to Domain Admins. Created as regular user."
 	}
 }
 
-# Refresh user objects after creation
+# --- Refresh objects ---
 $Target = Get-ADUser -Identity $TargetUser
 $LowPriv = Get-ADUser -Identity $LowPrivUser
 
-# --- Abuse ACLs ---
+# --- Apply GenericAll ACL ---
 $TargetDN = "LDAP://" + $Target.DistinguishedName
 $TargetDE = [ADSI]$TargetDN
 
-# Translate the LowPriv user to SID
 $LowPrivSID = (New-Object System.Security.Principal.NTAccount($LowPriv.SamAccountName)).Translate([System.Security.Principal.SecurityIdentifier])
-
-# Get existing ACL
 $ACL = $TargetDE.ObjectSecurity
 
-# Create new access rule with GenericAll
 $Rule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
 	$LowPrivSID,
 	[System.DirectoryServices.ActiveDirectoryRights]::GenericAll,
 	[System.Security.AccessControl.AccessControlType]::Allow
 )
 
-# Apply rule
 $ACL.AddAccessRule($Rule)
 $TargetDE.ObjectSecurity = $ACL
 $TargetDE.CommitChanges()
 
-# Confirm that GenericAll was applied
+# --- Refresh ACL for validation ---
+$TargetDE = [ADSI]$TargetDN
+$ACL = $TargetDE.ObjectSecurity
+
+# --- Validate GenericAll ---
 $appliedRule = $ACL.Access | Where-Object {
-	($_.IdentityReference -match $LowPriv.SamAccountName -or $_.IdentityReference -match ".*\\$($LowPriv.SamAccountName)") -and $_.ActiveDirectoryRights -match "GenericAll"
+	($_.IdentityReference -match $LowPriv.SamAccountName -or $_.IdentityReference -match ".*\\$($LowPriv.SamAccountName)") `
+		-and $_.ActiveDirectoryRights -match "GenericAll"
 }
 
 if ($appliedRule)
-{
-	Write-Host "[+] Successfully granted GenericAll rights to $($LowPriv.SamAccountName) over $($Target.SamAccountName)" -ForegroundColor Green
-	exit 0
+{ Write-Ok "Successfully granted GenericAll rights to $($LowPriv.SamAccountName) over $($Target.SamAccountName)"; exit 0 
 } else
-{
-	Write-Host "[-] Failed to apply GenericAll rights to $($LowPriv.SamAccountName)" -ForegroundColor Red
-	exit 1
+{ Write-Bad "Failed to apply GenericAll rights to $($LowPriv.SamAccountName)"; exit 1 
 }
