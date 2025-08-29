@@ -6,3 +6,6 @@
 - unconstrained delegation
 - ntlm downgrade
 - smbv1
+- gpo abuse
+- enable llmnr
+- enable nbt ns
