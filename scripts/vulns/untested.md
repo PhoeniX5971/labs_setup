@@ -6,3 +6,5 @@
 - responder
 - sidhistory
 - rdp scheduler
+- enable llmnr
+- enable nbt ns
