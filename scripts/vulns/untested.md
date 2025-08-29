@@ -1,0 +1,8 @@
+- account is sensitive
+- constrained delegation kerb only
+- constrained delegation use any
+- gpo abuse
+- ntlm relay
+- responder
+- sidhistory
+- rdp scheduler

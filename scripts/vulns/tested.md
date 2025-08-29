@@ -1,0 +1,8 @@
+- acl
+- adcs esc 10
+- adcs esc 11
+- add spn
+- as rep roasting
+- unconstrained delegation
+- ntlm downgrade
+- smbv1
