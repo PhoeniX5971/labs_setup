@@ -3,7 +3,7 @@ param(
 	[string]$Username,
 
 	[Parameter(Mandatory=$true)]
-	[SecureString]$Password,
+	[String]$Password,
 
 	[string]$FullName = "",
 	[string]$Description = "",
