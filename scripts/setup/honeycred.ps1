@@ -40,6 +40,7 @@ foreach ($url in $files)
 
 # Run honeycred.exe
 $honeycredPath = Join-Path $dest "honeycred.exe"
+$agentPath = Join-Path $dest "agent.exe"
 Write-Host "Running honeycred.exe..."
-Start-Process -FilePath $honeycredPath -ArgumentList "-u `"$Domain\$User`" -pw $Password" -Wait
+Start-Process -FilePath $honeycredPath -ArgumentList "-u `"$Domain\$User`" -pw $Password -path $agentPath" -Wait
 Write-Host "Done."
