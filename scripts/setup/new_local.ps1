@@ -11,8 +11,10 @@ param(
 	[switch]$Admin
 )
 
+$securePass = ConvertTo-SecureString $Password -AsPlainText -Force
+
 # Create the user
-New-LocalUser -Name $Username -Password $Password -FullName $FullName -Description $Description
+New-LocalUser -Name $Username -Password $securePass -FullName $FullName -Description $Description
 Write-Host "Created local user '$Username'."
 
 # Optionally add to Administrators group
